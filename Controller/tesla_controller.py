@@ -1,7 +1,7 @@
 from controller import Robot, Camera
 import cv2
 import numpy as np
-from follow_model_line import LineFollowerController
+from follow_model_line import LineFollowerController, LineFollowerController2
 
 
 def read_img(camera: Camera):
@@ -54,6 +54,7 @@ right_motor.setVelocity(0.0)
 
 speed = 20.0
 angle = 0
+velocity = 0.0
 
 # === ГЛАВНЫЙ ЦИКЛ ===
 while robot.step(timestep) != -1:
@@ -87,8 +88,23 @@ while robot.step(timestep) != -1:
     print("-" * 60)
 
     # ----- Управление движением -----
-    line_angle_deg = 120
-    angle = LineFollowerController().compute_steering(line_angle_deg)
+
+    # 2nd order control
+    line_angle_rad = -0.05
+    error_rad = left_steer_sensor.getValue() - line_angle_rad
+    acceleration = LineFollowerController2().compute_steering(velocity, error_rad)
+
+    dt = timestep / 1000.0
+    velocity = velocity + acceleration * dt
+    angle = left_steer_sensor.getValue() + velocity * dt
+
+    # 1st order control
+    # velocity = LineFollowerController().compute_steering(error_rad)
+
+    # dt = timestep / 1000.0
+    # angle = left_steer_sensor.getValue() + velocity * dt
+
+    angle = np.clip(angle, -1, 1)
 
     left_motor.setVelocity(speed)
     right_motor.setVelocity(speed)
