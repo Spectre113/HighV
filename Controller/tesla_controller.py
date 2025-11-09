@@ -1,9 +1,20 @@
-from controller import Robot
+from controller import Robot, Camera
+import cv2
+import numpy as np
+from follow_model_line import LineFollowerController
+
+
+def read_img(camera: Camera):
+    width = camera.getWidth()
+    height = camera.getHeight()
+    img_bytes = camera.getImage()
+    img = np.frombuffer(img_bytes, np.uint8).reshape((height, width, 4)).copy()
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+    return img
+
 
 robot = Robot()
 timestep = int(robot.getBasicTimeStep())
-
-# === ИНИЦИАЛИЗАЦИЯ УСТРОЙСТВ ===
 
 # Движение
 left_motor = robot.getDevice('left_rear_wheel')
@@ -24,7 +35,7 @@ right_rear_sensor = robot.getDevice('right_rear_sensor')
 left_steer_sensor = robot.getDevice('left_steer_sensor')
 right_steer_sensor = robot.getDevice('right_steer_sensor')
 
-# === ВКЛЮЧЕНИЕ СЕНСОРОВ ===
+# ВКЛЮЧЕНИЕ СЕНСОРОВ
 gps.enable(timestep)
 imu.enable(timestep)
 gyro.enable(timestep)
@@ -41,8 +52,8 @@ right_motor.setPosition(float('inf'))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
-speed = 5.0
-angle = 0.1
+speed = 20.0
+angle = 0
 
 # === ГЛАВНЫЙ ЦИКЛ ===
 while robot.step(timestep) != -1:
@@ -63,8 +74,8 @@ while robot.step(timestep) != -1:
     print(f"Lidar (первые 5): {[round(r, 2) for r in ranges[:5]]}")
 
     # ----- Камера -----
-    width = camera.getWidth()
-    height = camera.getHeight()
+    img = read_img(camera)
+    height, width, _ = img.shape
     print(f"Camera: {width}x{height}")
 
     # ----- Датчики вращения -----
@@ -76,6 +87,9 @@ while robot.step(timestep) != -1:
     print("-" * 60)
 
     # ----- Управление движением -----
+    line_angle_deg = 120
+    angle = LineFollowerController().compute_steering(line_angle_deg)
+
     left_motor.setVelocity(speed)
     right_motor.setVelocity(speed)
     left_steer.setPosition(angle)
