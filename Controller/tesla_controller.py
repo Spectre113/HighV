@@ -1,7 +1,10 @@
 from controller import Robot, Camera
 import cv2
 import numpy as np
-from follow_model_line import LineFollowerController, LineFollowerController2
+# from follow_model_line import LineFollowerController, LineFollowerController2
+import matplotlib.pyplot as plt
+from pid_controller import PDController
+from baseline_detection import detect_yellow_lane_and_error
 
 
 def read_img(camera: Camera):
@@ -52,9 +55,19 @@ right_motor.setPosition(float('inf'))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
+
+# Setup visualization
+
+width = camera.getWidth()
+height = camera.getHeight()
+
+plt.ion()
+fig, ax = plt.subplots()
+img_display = ax.imshow(np.zeros((height, width, 3), dtype=np.uint8), cmap='gray')
+plt.show(block=False)
+
 speed = 20.0
-angle = 0
-velocity = 0.0
+prev_err = None
 
 # === ГЛАВНЫЙ ЦИКЛ ===
 while robot.step(timestep) != -1:
@@ -79,6 +92,10 @@ while robot.step(timestep) != -1:
     height, width, _ = img.shape
     print(f"Camera: {width}x{height}")
 
+    output, err = detect_yellow_lane_and_error(img)
+
+    img_display.set_data(output)
+
     # ----- Датчики вращения -----
     print(f"Left rear wheel: {left_rear_sensor.getValue():.3f}")
     print(f"Right rear wheel: {right_rear_sensor.getValue():.3f}")
@@ -89,14 +106,36 @@ while robot.step(timestep) != -1:
 
     # ----- Управление движением -----
 
-    # 2nd order control
-    line_angle_rad = -0.05
-    error_rad = left_steer_sensor.getValue() - line_angle_rad
-    acceleration = LineFollowerController2().compute_steering(velocity, error_rad)
+    if prev_err is None:
+        prev_err = 0.0
 
     dt = timestep / 1000.0
-    velocity = velocity + acceleration * dt
-    angle = left_steer_sensor.getValue() + velocity * dt
+    derr_dt = (err - prev_err) / dt
+
+    kp = 0.05
+    kd = 0.1
+
+    # Pull towards the line if too close to the edge of camera frame
+    counter = 3
+    if np.abs(err) > 0.7 and counter > 0:
+        counter -= 1
+        kp = 0.1
+        kd = 0.5
+    else:
+        counter = 3
+
+    angle = PDController(kp=kp, kd=kd).compute_steering(err, derr_dt)
+
+    prev_err = err
+
+    # 2nd order control
+    # line_angle_rad = -0.05
+    # error_rad = left_steer_sensor.getValue() - line_angle_rad
+    # acceleration = LineFollowerController2().compute_steering(velocity, error_rad)
+
+    # dt = timestep / 1000.0
+    # velocity = velocity + acceleration * dt
+    # angle = left_steer_sensor.getValue() + velocity * dt
 
     # 1st order control
     # velocity = LineFollowerController().compute_steering(error_rad)
@@ -104,9 +143,13 @@ while robot.step(timestep) != -1:
     # dt = timestep / 1000.0
     # angle = left_steer_sensor.getValue() + velocity * dt
 
-    angle = np.clip(angle, -1, 1)
+    # angle = np.clip(angle, -1, 1)
 
     left_motor.setVelocity(speed)
     right_motor.setVelocity(speed)
     left_steer.setPosition(angle)
     right_steer.setPosition(angle)
+
+    # Refresh the display
+    fig.canvas.draw()
+    fig.canvas.flush_events()
