@@ -12,7 +12,6 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/trees/protos/Pine.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/trees/protos/Cypress.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/trees/protos/Sassafras.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/traffic/protos/PedestrianCrossing.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/traffic/protos/CautionSign.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/traffic/protos/CautionPanel.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/traffic/protos/OrderSign.proto"
@@ -27,7 +26,7 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/traffic/protos/HighwaySign.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/obstacles/protos/OilBarrel.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/road/protos/Crossroad.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3.proto"
+EXTERNPROTO "../protos/TeslaModel3.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/range_rover/RangeRoverSportSVR.proto"
 
 WorldInfo {
@@ -61,8 +60,8 @@ WorldInfo {
   ]
 }
 Viewpoint {
-  orientation -0.2707505132009386 -0.08966278582366882 0.9584647851850204 3.7124830030440417
-  position 119.81592779873789 127.45426197930706 75.1874880335616
+  orientation 0.1605753536282111 0.30087226722868315 -0.9400486341779594 1.0844214143378301
+  position 34.12718872889443 87.96745825153236 10.428788813094389
   near 1
   follow "vehicle"
   followType "Mounted Shot"
@@ -254,7 +253,7 @@ GenericTrafficLight {
   startGreen FALSE
   greenTime 10
   redTime 10
-  state "orange"
+  state "red"
 }
 StraightRoadSegment {
   translation -4.5 45 0.02
@@ -360,8 +359,20 @@ RoadIntersection {
   startRoadBorder FALSE
 }
 RangeRoverSportSVR {
-  translation -38.7281 38.8387 0.4
-  rotation 0 0 1 -2.3561953071795863
+  hidden position_0_0 -1.3902294085922517e-11
+  hidden position2_0_0 1.9950865615144264e-05
+  hidden position_0_1 1.5457801141382526e-11
+  hidden position2_0_1 1.995086560548532e-05
+  hidden position_0_2 1.778886301182479e-05
+  hidden position_0_3 1.7788863042962806e-05
+  hidden linearVelocity_0 0.0042593927163992705 0.0042593856850594415 -0.038792799769322255
+  hidden angularVelocity_0 -0.009462094454990464 0.009462109959063464 -1.2691957090269327e-11
+  hidden rotation_1 9.670231184904603e-12 -0.9999999999998995 4.482377410825508e-07 6.35868429375494e-05
+  hidden rotation_2 1.089203754372437e-11 0.9999999999998698 -5.101968403473394e-07 6.35868429375494e-05
+  hidden rotation_3 0 -0.9999999999999999 0 5.4013657074225236e-05
+  hidden rotation_4 0 1 0 5.4013657074225236e-05
+  translation -38.73016544710574 38.836634556365794 0.13735856588000195
+  rotation -0.006164717905375424 -0.0025535068398192524 0.9999777376801776 -2.3562110486533814
   name "vehicle(1)"
 }
 StraightRoadSegment {
@@ -560,7 +571,7 @@ GenericTrafficLight {
   startGreen FALSE
   greenTime 10
   redTime 10
-  state "orange"
+  state "red"
 }
 CrossRoadsTrafficLight {
   translation 45 45 0
@@ -615,14 +626,6 @@ Cypress {
 Sassafras {
   translation -115.416 -32.2671 0
   name "tree(18)"
-}
-PedestrianCrossing {
-  translation 26 45 -0.06
-  rotation 0 0 1 -1.5707953071795862
-}
-PedestrianCrossing {
-  translation -45.0693 -61.4608 -0.06
-  name "pedestrian crossing(1)"
 }
 CautionSign {
   translation -48.9391 -91.9275 0
@@ -836,7 +839,10 @@ HighwayPole {
   ]
 }
 OilBarrel {
-  translation 105.104 -45 0.6
+  hidden linearVelocity_0 -1.725148859909806e-19 1.4833635818094914e-17 5.149877980999011e-15
+  hidden angularVelocity_0 -2.512233208355416e-17 -3.520641022162504e-38 1.239947273403003e-18
+  translation 105.104 -45 0.5998773749999997
+  rotation -0.23888097673085992 0.958950918688358 0.15280384322020396 8.162960097925529e-19
   name "oil barrel(3)"
   height 1.2
   radius 0.4
@@ -967,10 +973,36 @@ Crossroad {
   ]
 }
 TeslaModel3 {
-  translation 47.1987 52.6451 0.400134
-  rotation 0 0 -1 -1.570705307179586
+  hidden position_0_0 -0.0006023456650402886
+  hidden position2_0_0 16.736530766274914
+  hidden position_0_1 -0.0005048038541596152
+  hidden position2_0_1 16.738849362738538
+  hidden position_0_2 16.866067890715687
+  hidden position_0_3 16.866543840775638
+  hidden linearVelocity_0 0.0007107463587506172 0.006552420438721839 0.19307824383885971
+  hidden angularVelocity_0 -0.002847013416954421 0.0019080973047431468 0.00014857354949761252
+  hidden rotation_1 -0.9966363668494177 0.06025908068321879 -0.05554093506960314 4.701165890643312
+  hidden rotation_2 -0.9323676275202921 -0.25231414894886456 0.25889800577136873 4.649768067228346
+  hidden rotation_3 -0.7645215610311853 0.45579980172436196 -0.4557996527713373 4.447053595342231
+  hidden rotation_4 -0.7390018340362803 -0.47638032999666824 0.476380174318033 4.414443055321076
+  translation 46.20819589141142 68.776439063781 0.2673230199931651
+  rotation 0.005155557193125768 -0.005239286356832337 0.9999729846893363 1.6523659004903313
   controller "<extern>"
   sensorsSlotFront [
+    Camera {
+      translation -2.12 0 0.93
+      rotation 0 0 1 0.785
+      name "left"
+      width 640
+      height 480
+    }
+    Camera {
+      translation -2.12 0 0.93
+      rotation 0 0 1 -0.785395307179586
+      name "right"
+      width 640
+      height 480
+    }
     Lidar {
       translation -2.31 0.650897 0.906022
       rotation 0.12942799327647478 -0.1294259932765787 -0.9831059489296136 -1.5878253071795863
@@ -1006,9 +1038,10 @@ TeslaModel3 {
     }
     Camera {
       translation -2.12 0 0.93
+      name "central"
       fieldOfView 1
-      width 360
-      height 240
+      width 640
+      height 480
       far 12
       recognition Recognition {
         occlusion 0
@@ -1023,5 +1056,5 @@ GenericTrafficLight {
   name "generic traffic light(2)"
   greenTime 10
   redTime 20
-  state "red"
+  state "green"
 }
