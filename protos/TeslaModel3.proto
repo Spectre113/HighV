@@ -8,19 +8,19 @@
 # Weight, transmission and motor properties are calibrated according to the 'Long Range Battery AWD Performance' version.
 # template language: javascript
 
-EXTERNPROTO "webots://projects/vehicles/protos/abstract/Car.proto"
-EXTERNPROTO "TeslaModel3Wheel.proto"
-EXTERNPROTO "webots://projects/vehicles/protos/abstract/VehicleLights.proto"
-EXTERNPROTO "TeslaModel3FrontLights.proto"
-EXTERNPROTO "TeslaModel3Coachwork.proto"
-EXTERNPROTO "TeslaModel3Windows.proto"
-EXTERNPROTO "TeslaModel3Details.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/abstract/Car.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3Wheel.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/abstract/VehicleLights.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3FrontLights.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3Coachwork.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3Windows.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/tesla/TeslaModel3Details.proto"
 
 PROTO TeslaModel3 [
   field     SFVec3f    translation       0 0 0.4                                                 # Is `Car.translation`.
   field     SFRotation rotation          0 0 1 0                                                 # Is `Car.rotation`.
   field     SFColor    color             1 1 1                                                   # Defines the car body color.
-  field     MFString   plate             "webots://projects/vehicles/protos/textures/plate.jpg"  # Defines the plate texture.
+  field     MFString   plate             "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/protos/textures/plate.jpg"  # Defines the plate texture.
   field     SFString   engineSound       ""                                                      # Is `Car.engineSound`.
   field     SFString   name              "vehicle"                                               # Is `Car.name`.
   field     SFString   controller        "<generic>"                                             # Is `Car.controller`.
@@ -32,7 +32,7 @@ PROTO TeslaModel3 [
   field     MFNode     sensorsSlotTop    []                                                      # Extends the robot with new nodes on the roof of the car.
   field     MFNode     sensorsSlotCenter []                                                      # Extends the robot with new nodes at the center of the car.
   field     SFBool     frontSpotLights   FALSE                                                   # Defines whether the car should have front spot lights.
-  field     SFString   window            "automobile"                                            # Is `Car.window`.
+  field     SFString   window            "<generic>"                                             # Is `Car.window`.
 ]
 {
   %< const frontSpotLights = fields.frontSpotLights.value; >%
@@ -216,7 +216,7 @@ PROTO TeslaModel3 [
     ]
     physics Physics {
       density -1
-      mass 1847
+      mass 1900
       centerOfMass [
         1.27 0 0
       ]
