@@ -1,10 +1,10 @@
 import cv2
 import numpy as np
 from controller import Camera
-from typing import Dict
+from typing import Dict, List, Tuple
 
 
-def detect_yellow_lane_and_error(image):
+def detect_yellow_lane_and_error(image, roi):
     """
     Detect yellow lane and compute angle deviation from vertical center.
 
@@ -18,11 +18,13 @@ def detect_yellow_lane_and_error(image):
         return image, 0.0
 
     try:
+        masked_image = image[roi[0]: roi[1], roi[2]: roi[3], :]
+
         # 1. Convert to HSV for better yellow color detection
-        hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        hsv = cv2.cvtColor(masked_image, cv2.COLOR_RGB2HSV)
 
         # Define yellow color range in HSV
-        lower_yellow = np.array([20, 100, 100])
+        lower_yellow = np.array([20, 30, 30])
         upper_yellow = np.array([30, 255, 255])
 
         # 2. Create yellow mask
@@ -51,39 +53,39 @@ def detect_yellow_lane_and_error(image):
             filtered_lines.append((x1, y1, x2, y2, center_x, center_y))
 
         # 5. Group lines by proximity and select dominant one
-        lines_by_center = {}
-        for line in filtered_lines:
-            x1, y1, x2, y2, center_x, center_y = line
+        # lines_by_center = {}
+        # for line in filtered_lines:
+        #     x1, y1, x2, y2, center_x, center_y = line
 
-            # Find if this line is close to existing group
-            found_group = False
-            for existing_center in lines_by_center.keys():
-                if (
-                    abs(center_x - existing_center) < image.shape[1] * 0.1
-                ):  # 10% width threshold
-                    lines_by_center[existing_center].append(line)
-                    found_group = True
-                    break
+        #     # Find if this line is close to existing group
+        #     found_group = False
+        #     for existing_center in lines_by_center.keys():
+        #         if (
+        #             abs(center_x - existing_center) < masked_image.shape[1] * 0.1
+        #         ):  # 10% width threshold
+        #             lines_by_center[existing_center].append(line)
+        #             found_group = True
+        #             break
 
-            if not found_group:
-                lines_by_center[center_x] = [line]
+        #     if not found_group:
+        #         lines_by_center[center_x] = [line]
 
-        # Select group with most lines (dominant lane)
-        if not lines_by_center:
-            return image, 0.0
+        # # Select group with most lines (dominant lane)
+        # if not lines_by_center:
+        #     return image, 0.0
 
         dominant_lines = filtered_lines
 
         # 6. Average the dominant lines into one representative line
-        avg_x1 = np.mean([l[0] for l in dominant_lines])
-        avg_y1 = np.mean([l[1] for l in dominant_lines])
-        avg_x2 = np.mean([l[2] for l in dominant_lines])
-        avg_y2 = np.mean([l[3] for l in dominant_lines])
-        avg_center_x = np.mean([l[4] for l in dominant_lines])
-        avg_center_y = np.mean([l[5] for l in dominant_lines])
+        avg_x1 = np.mean([line[0] for line in dominant_lines])
+        avg_y1 = np.mean([line[1] for line in dominant_lines])
+        avg_x2 = np.mean([line[2] for line in dominant_lines])
+        avg_y2 = np.mean([line[3] for line in dominant_lines])
+        avg_center_x = np.mean([line[4] for line in dominant_lines])
+        avg_center_y = np.mean([line[5] for line in dominant_lines])
 
         # 7. Draw the detected line on original image
-        result_image = image.copy()
+        result_image = masked_image.copy()
 
         cv2.line(
             result_image,
@@ -102,12 +104,12 @@ def detect_yellow_lane_and_error(image):
         )
 
         # Draw vertical reference line
-        center_x = image.shape[1] // 2
+        center_x = masked_image.shape[1] // 2
         cv2.line(
-            result_image, (center_x, 0), (center_x, image.shape[0]), (255, 0, 0), 2
+            result_image, (center_x, 0), (center_x, masked_image.shape[0]), (255, 0, 0), 2
         )  # Blue reference line
 
-        w = image.shape[1]
+        w = masked_image.shape[1]
         lateral_error = (avg_center_x - w // 2) / (w // 2)
 
         # Add angle text
@@ -132,7 +134,7 @@ def detect_yellow_lane_and_error(image):
 class MultiCameralineDetector:
 
     def __init__(self):
-        self.current_camera = 'central'
+        self.current_camera = "central"
 
     def __call__(self, cameras: Dict[str, Camera]):
 
@@ -141,30 +143,49 @@ class MultiCameralineDetector:
             img = self.read_img(camera)
             images[camera_name] = img
 
-        max_abs_error = -np.inf
+        central_roi = self.compute_roi(images['central'].shape, mode='central')
 
-        result_image = None
-        result_error = 0.0
+        central_lane, central_error = detect_yellow_lane_and_error(images["central"], central_roi)
 
-        central_lane, central_error = detect_yellow_lane_and_error(images['central'])
-        if central_error > 0:
-            self.current_camera = 'central'
+        if np.abs(central_error) > 0:
+            self.current_camera = "central"
+            cv2.imwrite("output_central.png", central_lane)
             return central_lane, central_error
 
-        left_lane, left_error = detect_yellow_lane_and_error(images['left'])
-        right_lane, right_error = detect_yellow_lane_and_error(images['right'])
+        left_roi = self.compute_roi(images['left'].shape, mode='left')
+        right_roi = self.compute_roi(images['right'].shape, mode='right')
 
-        if self.current_camera == 'left':
+        left_lane, left_error = detect_yellow_lane_and_error(images["left"], left_roi)
+        right_lane, right_error = detect_yellow_lane_and_error(images["right"], right_roi)
+
+        if self.current_camera == "left":
+            cv2.imwrite("output_left.png", left_lane)
             return left_lane, left_error
-        elif self.current_camera == 'right':
+        elif self.current_camera == "right":
+            cv2.imwrite("output_right.png", right_lane)
             return right_lane, right_error
 
         if np.abs(left_error) > np.abs(right_error):
-            self.current_camera = 'left'
+            self.current_camera = "left"
+            cv2.imwrite("output_left.png", left_lane)
             return left_lane, left_error
 
-        self.current_camera = 'right'
+        self.current_camera = "right"
+        cv2.imwrite("output_right.png", right_lane)
         return right_lane, right_error
+
+    def compute_roi(self, shape: List[int], mode="central") -> Tuple[int, int, int, int]:
+
+        height = shape[0]
+        width = shape[1]
+        if mode == "central":
+            return [height // 4, -1, 0, -1]
+        if mode == "left":
+            return [height // 2, -1, width // 2, -1]
+        if mode == "right":
+            return [height // 2, -1, 0, width // 2]
+
+        raise ValueError(f"Unknown mode: {mode}")
 
     def read_img(self, camera: Camera):
         width = camera.getWidth()
