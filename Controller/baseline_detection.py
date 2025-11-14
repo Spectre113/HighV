@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from controller import Camera
-from typing import List
+from typing import Dict
 
 
 def detect_yellow_lane_and_error(image):
@@ -131,27 +131,40 @@ def detect_yellow_lane_and_error(image):
 
 class MultiCameralineDetector:
 
-    def __call__(self, cameras: List[Camera]):
+    def __init__(self):
+        self.current_camera = 'central'
 
-        images = []
-        for camera in cameras:
+    def __call__(self, cameras: Dict[str, Camera]):
+
+        images = {}
+        for camera_name, camera in cameras.items():
             img = self.read_img(camera)
-            images.append(img)
+            images[camera_name] = img
 
         max_abs_error = -np.inf
 
         result_image = None
         result_error = 0.0
 
-        for image in images:
-            processed_image, error = detect_yellow_lane_and_error(image)
-            if np.abs(error) > max_abs_error:
-                max_abs_error = np.abs(error)
+        central_lane, central_error = detect_yellow_lane_and_error(images['central'])
+        if central_error > 0:
+            self.current_camera = 'central'
+            return central_lane, central_error
 
-                result_image = processed_image
-                result_error = error
+        left_lane, left_error = detect_yellow_lane_and_error(images['left'])
+        right_lane, right_error = detect_yellow_lane_and_error(images['right'])
 
-        return result_image, result_error
+        if self.current_camera == 'left':
+            return left_lane, left_error
+        elif self.current_camera == 'right':
+            return right_lane, right_error
+
+        if np.abs(left_error) > np.abs(right_error):
+            self.current_camera = 'left'
+            return left_lane, left_error
+
+        self.current_camera = 'right'
+        return right_lane, right_error
 
     def read_img(self, camera: Camera):
         width = camera.getWidth()

@@ -57,9 +57,13 @@ right_motor.setVelocity(0.0)
 width = central_camera.getWidth()
 height = central_camera.getHeight()
 
-cameras = [left_camera, central_camera, right_camera]
+cameras = {
+    'left': left_camera,
+    'central': central_camera,
+    'right': right_camera
+}
 
-speed = 20.0
+speed = 2
 angle = 0.0
 err = 0.0
 
