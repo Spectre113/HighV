@@ -2,7 +2,7 @@ from controller import Robot
 import numpy as np
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
-from baseline_detection import BaselineDetector
+from baseline_detection import MultiCameralineDetector
 
 
 robot = Robot()
@@ -19,7 +19,10 @@ gps = robot.getDevice('gps')
 imu = robot.getDevice('inertial unit')
 gyro = robot.getDevice('gyro')
 lidar = robot.getDevice('lidar_on')
-camera = robot.getDevice('camera')
+
+left_camera = robot.getDevice('left')
+central_camera = robot.getDevice('central')
+right_camera = robot.getDevice('right')
 
 # Датчики вращения колёс
 left_rear_sensor = robot.getDevice('left_rear_sensor')
@@ -32,7 +35,11 @@ gps.enable(timestep)
 imu.enable(timestep)
 gyro.enable(timestep)
 lidar.enable(timestep)
-camera.enable(timestep)
+
+left_camera.enable(timestep)
+central_camera.enable(timestep)
+right_camera.enable(timestep)
+
 left_rear_sensor.enable(timestep)
 right_rear_sensor.enable(timestep)
 left_steer_sensor.enable(timestep)
@@ -47,16 +54,18 @@ right_motor.setVelocity(0.0)
 
 # Setup visualization
 
-width = camera.getWidth()
-height = camera.getHeight()
+width = central_camera.getWidth()
+height = central_camera.getHeight()
+
+cameras = [left_camera, central_camera, right_camera]
 
 speed = 20.0
 angle = 0.0
 err = 0.0
 
-kp = 0.002
-kd = 0.005
-controller = PDController(BaselineDetector(), kp=kp, kd=kd)
+kp = 0.1
+kd = 0.01
+controller = PDController(MultiCameralineDetector(), kp=kp, kd=kd)
 controller.start_processing()
 
 # === ГЛАВНЫЙ ЦИКЛ ===
@@ -87,12 +96,12 @@ while robot.step(timestep) != -1:
 
     # ----- Управление движением -----
 
-    controller.update_sensor(camera, angle)
+    controller.update_sensor(cameras, angle)
 
     output, err, state = controller.get_latest_result()
 
     if state and err:
-        # img_display.set_data(output)
+        # img_display.set_data(output
 
         # Pull towards the line if too close to the edge of camera frame
         counter = 3
