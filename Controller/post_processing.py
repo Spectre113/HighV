@@ -153,3 +153,12 @@ def plot_smoothed_trajectory(xs, ys, turn_peaks, min_x, max_x, min_y, max_y):
     plt.axis('equal')
     plt.legend()
     plt.show()
+
+def compute_green_distances(green_indices):
+    green_indices = sorted(green_indices)
+    distances = []
+
+    for a, b in zip(green_indices, green_indices[1:]):
+        distances.append((a, b, b - a))
+
+    return distances
