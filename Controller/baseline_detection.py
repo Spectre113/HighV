@@ -52,28 +52,6 @@ def detect_yellow_lane_and_error(image, roi):
 
             filtered_lines.append((x1, y1, x2, y2, center_x, center_y))
 
-        # 5. Group lines by proximity and select dominant one
-        # lines_by_center = {}
-        # for line in filtered_lines:
-        #     x1, y1, x2, y2, center_x, center_y = line
-
-        #     # Find if this line is close to existing group
-        #     found_group = False
-        #     for existing_center in lines_by_center.keys():
-        #         if (
-        #             abs(center_x - existing_center) < masked_image.shape[1] * 0.1
-        #         ):  # 10% width threshold
-        #             lines_by_center[existing_center].append(line)
-        #             found_group = True
-        #             break
-
-        #     if not found_group:
-        #         lines_by_center[center_x] = [line]
-
-        # # Select group with most lines (dominant lane)
-        # if not lines_by_center:
-        #     return image, 0.0
-
         dominant_lines = filtered_lines
 
         # 6. Average the dominant lines into one representative line
@@ -149,7 +127,6 @@ class MultiCameralineDetector:
 
         if np.abs(central_error) > 0:
             self.current_camera = "central"
-            cv2.imwrite("output_central.png", central_lane)
             return central_lane, central_error
 
         left_roi = self.compute_roi(images['left'].shape, mode='left')
@@ -159,19 +136,15 @@ class MultiCameralineDetector:
         right_lane, right_error = detect_yellow_lane_and_error(images["right"], right_roi)
 
         if self.current_camera == "left":
-            cv2.imwrite("output_left.png", left_lane)
             return left_lane, left_error
         elif self.current_camera == "right":
-            cv2.imwrite("output_right.png", right_lane)
             return right_lane, right_error
 
         if np.abs(left_error) > np.abs(right_error):
             self.current_camera = "left"
-            cv2.imwrite("output_left.png", left_lane)
             return left_lane, left_error
 
         self.current_camera = "right"
-        cv2.imwrite("output_right.png", right_lane)
         return right_lane, right_error
 
     def compute_roi(self, shape: List[int], mode="central") -> Tuple[int, int, int, int]:
