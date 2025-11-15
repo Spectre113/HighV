@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
-from post_processing import find_turn_peaks, normalize_coordinates, plot_trajectory, plot_smoothed_trajectory
+from post_processing import find_turn_peaks, normalize_coordinates, plot_trajectory, plot_smoothed_trajectory, smooth_trajectory_with_subsampling, plot_trajectory_with_smoothing
 
 
 robot = Robot()
@@ -76,7 +76,7 @@ controller.start_processing()
 
 positions = []
 yaw_rates = []
-interval = 0.1
+interval = 0.2
 log = 0
 threshold = 0.25
 
@@ -179,7 +179,7 @@ except KeyboardInterrupt:
     pass
 
 
-turn_peaks, turn_starts, turn_ends = find_turn_peaks(yaw_rates, threshold=0.1, window_size=4)
+turn_peaks, turn_starts, turn_ends = find_turn_peaks(yaw_rates, threshold=0.15, window_size=6)
 
 xs = [p[0] for p in positions]
 ys = [p[1] for p in positions]
@@ -193,3 +193,6 @@ for i in turn_peaks:
 plot_trajectory(xs_norm, ys_norm, turn_starts, turn_ends, turn_peaks)
 
 plot_smoothed_trajectory(xs, ys, turn_peaks, min_x, max_x, min_y, max_y)
+
+smooth_xs, smooth_ys = smooth_trajectory_with_subsampling(xs, ys, turn_peaks, step=5, num_interp=500)
+plot_trajectory_with_smoothing(xs, ys, turn_peaks, smooth_xs, smooth_ys)

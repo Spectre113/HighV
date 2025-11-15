@@ -73,6 +73,51 @@ def plot_trajectory(xs_norm, ys_norm, turn_starts, turn_ends, turn_peaks):
     print("Saved trajectory_with_turns_and_peaks.png")
     plt.show()
 
+def smooth_trajectory_with_subsampling(xs, ys, turn_peaks, step=20, num_interp=500):
+    xs = np.array(xs)
+    ys = np.array(ys)
+
+    n_points = len(xs)
+    sampled_indices = list(range(0, n_points, step))
+
+    all_indices = sorted(set(turn_peaks) | set(sampled_indices))
+
+    control_xs = xs[all_indices]
+    control_ys = ys[all_indices]
+
+    cs_x = CubicSpline(all_indices, control_xs)
+    cs_y = CubicSpline(all_indices, control_ys)
+
+    interp_indices = np.linspace(0, n_points - 1, num_interp)
+    smooth_xs = cs_x(interp_indices)
+    smooth_ys = cs_y(interp_indices)
+
+    return smooth_xs, smooth_ys
+
+def plot_trajectory_with_smoothing(xs, ys, turn_peaks, smooth_xs, smooth_ys):
+    min_x, max_x = np.min(xs), np.max(xs)
+    min_y, max_y = np.min(ys), np.max(ys)
+    range_x = max_x - min_x if max_x != min_x else 1
+    range_y = max_y - min_y if max_y != min_y else 1
+
+    xs_norm = (np.array(xs) - min_x) / range_x
+    ys_norm = (np.array(ys) - min_y) / range_y
+    smooth_xs_norm = (smooth_xs - min_x) / range_x
+    smooth_ys_norm = (smooth_ys - min_y) / range_y
+
+    plt.figure(figsize=(10, 8))
+    plt.plot(xs_norm, ys_norm, marker='o', color='blue', linewidth=1, label='Original Trajectory')
+    plt.scatter(xs_norm[turn_peaks], ys_norm[turn_peaks], color='green', s=100, label='Turn Peaks')
+    plt.plot(smooth_xs_norm, smooth_ys_norm, color='red', linewidth=2, label='Smoothed Trajectory')
+
+    plt.xlabel("Normalized X")
+    plt.ylabel("Normalized Y")
+    plt.title("Trajectory with Additional Sampling Smoothing")
+    plt.grid(True)
+    plt.axis('equal')
+    plt.legend()
+    plt.show()
+
 def plot_smoothed_trajectory(xs, ys, turn_peaks, min_x, max_x, min_y, max_y):
     xs = np.array(xs)
     ys = np.array(ys)
