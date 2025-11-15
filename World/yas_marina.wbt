@@ -1,0 +1,156 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/Road.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/road/protos/RoadLine.proto"
+EXTERNPROTO "../protos/TeslaModel3.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+
+WorldInfo {
+  info [
+    "Simulation of Boston Dynamics' Spot robot in a simple industrial environment."
+    "The robot is saying hello with its right leg."
+  ]
+  title "Spot Robot demo"
+  ERP 0.6
+  basicTimeStep 10
+  lineScale 1
+  contactProperties [
+    ContactProperties {
+      material2 "TeslaModel3Wheel"
+      coulombFriction [
+        8
+      ]
+      softCFM 1e-05
+      bumpSound ""
+      rollSound ""
+      slideSound ""
+    }
+    ContactProperties {
+      coulombFriction [
+        8
+      ]
+      softCFM 1e-05
+      bumpSound ""
+      rollSound ""
+      slideSound ""
+    }
+  ]
+}
+Viewpoint {
+  orientation 0.19159902926351208 0.9267727263907855 -0.3230822273098138 1.1384737898094348
+  position 428.8872740887098 1.5071124466534904 32.50790557744999
+  follow "vehicle"
+  followType "Mounted Shot"
+  followSmoothness 0
+}
+Background {
+  skyColor [
+    0.15 0.45 1
+  ]
+}
+Road {
+  translation 0 0 0.02
+  width 10
+  lines [
+    RoadLine {
+      color 0.85 0.75 0.3
+      type "double"
+    }
+  ]
+  wayPoints [
+    99 0 0, 762 -8 0, 814 2 0, 784 56 0, 900 159 0, 974 322 0, 993 523 0, 850 514 0, 929 357 0, 930 336 0, 912 279 0, 839 244 0, 812 323 0, 800 310 0, 728 290 0, 800 184 0, 800 129 0, 726 55 0, 714 87 0, 609 261 0, 588 334 0, 444 275 0, 401 256 0, 410 136 0, 280 88 0, 220 110 0, 180 120 0, -5 20 0, -5 20 0, -10 10 0, 0 0 0, 5 0 0, 100 0 0
+  ]
+}
+TeslaModel3 {
+  translation 445.161 -3.82604 0.422858
+  rotation 0 0 1 -5.307179586466759e-06
+  controller "<extern>"
+  sensorsSlotFront [
+    Camera {
+      translation -2.12 0 0.93
+      rotation 0 0 1 0.785
+      name "left"
+      width 640
+      height 480
+    }
+    Camera {
+      translation -2.12 0 0.93
+      rotation 0 0 1 -0.785395307179586
+      name "right"
+      width 640
+      height 480
+    }
+    Lidar {
+      translation -2.31 0.650897 0.906022
+      rotation 0.12942799327647478 -0.1294259932765787 -0.9831059489296136 -1.5878253071795863
+      name "lidar_sol"
+      horizontalResolution 72
+      fieldOfView 1.2
+      numberOfLayers 1
+      maxRange 4
+    }
+    Lidar {
+      translation -2.37 -0.672588 0.879659
+      rotation 0.12942805351145734 0.12943005351228423 -0.9831054064605903 1.58783
+      name "lidar_sag"
+      horizontalResolution 72
+      fieldOfView 1.2
+      numberOfLayers 1
+      maxRange 4
+    }
+    Lidar {
+      translation -3.46439 0 1.23678
+      rotation 0 1 0 0.261799
+      name "lidar_on"
+      horizontalResolution 72
+      fieldOfView 0.5
+      numberOfLayers 1
+      maxRange 6.8
+    }
+    InertialUnit {
+    }
+    Gyro {
+    }
+    GPS {
+    }
+    Camera {
+      translation -2.12 0 0.93
+      name "central"
+      fieldOfView 1
+      width 640
+      height 480
+      far 12
+      recognition Recognition {
+        occlusion 0
+        frameThickness 0
+        segmentation TRUE
+      }
+    }
+  ]
+}
+DEF GROUND Solid {
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.8 0.8
+        baseColorMap ImageTexture {
+          url [
+            "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/vehicles/worlds/textures/ground.jpg"
+          ]
+        }
+        roughness 0.5
+        metalness 0
+        textureTransform TextureTransform {
+          scale 500 500
+        }
+      }
+      geometry DEF GROUND_PLANE Plane {
+        size 2000 2000
+      }
+    }
+  ]
+  boundingObject USE GROUND_PLANE
+  locked TRUE
+}
+TexturedBackgroundLight {
+}
