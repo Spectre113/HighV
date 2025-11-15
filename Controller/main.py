@@ -6,7 +6,7 @@ from baseline_detection import MultiCameralineDetector
 
 
 robot = Robot()
-timestep = int(robot.getBasicTimeStep())
+timestep = 32
 
 # Движение
 left_motor = robot.getDevice('left_rear_wheel')
@@ -63,7 +63,7 @@ cameras = {
     'right': right_camera
 }
 
-speed = 2
+speed = 20
 angle = 0.0
 err = 0.0
 
@@ -72,11 +72,27 @@ kd = 0.01
 controller = PDController(MultiCameralineDetector(), kp=kp, kd=kd)
 controller.start_processing()
 
+positions = []
+interval = 0.5
+log = 0
+
 # === ГЛАВНЫЙ ЦИКЛ ===
 while robot.step(timestep) != -1:
+    current_time = robot.getTime()
+
     # ----- GPS -----
     pos = gps.getValues()  # [x, y, z]
     print(f"GPS: x={pos[0]:.2f}, y={pos[1]:.2f}, z={pos[2]:.2f}")
+    if current_time - log >= interval:
+        x = pos[0]
+        y = pos[2]
+
+        positions.append((x, y))
+        print(f"Saved position: {x:.3f}, {y:.3f} at t = {current_time:.2f}")
+
+        log = current_time
+    else:
+        print("Curr time: ", current_time)
 
     # ----- IMU -----
     roll, pitch, yaw = imu.getRollPitchYaw()
