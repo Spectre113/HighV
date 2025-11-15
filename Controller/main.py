@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
-from post_processing import compute_green_distances, find_turn_peaks, normalize_coordinates, plot_trajectory, plot_smoothed_trajectory, smooth_trajectory_with_subsampling
+from post_processing import compute_green_distances, compute_segment_radius, find_turn_peaks, normalize_coordinates, plot_trajectory, plot_smoothed_trajectory, smooth_trajectory_with_subsampling, split_into_segments
 
 
 robot = Robot()
@@ -65,7 +65,7 @@ cameras = {
     'right': right_camera
 }
 
-speed = 13
+speed = 18
 angle = 0.0
 err = 0.0
 
@@ -179,7 +179,7 @@ except KeyboardInterrupt:
     pass
 
 
-turn_peaks, turn_starts, turn_ends = find_turn_peaks(yaw_rates, threshold=0.15, window_size=6)
+turn_peaks, turn_starts, turn_ends = find_turn_peaks(yaw_rates, threshold=0.12, window_size=5)
 
 xs = [p[0] for p in positions]
 ys = [p[1] for p in positions]
@@ -199,3 +199,16 @@ green_distances = compute_green_distances(turn_peaks)
 print("Distance b/w green points:")
 for a, b, d in green_distances:
     print(f"{a} → {b}   distance = {d}")
+
+segments = split_into_segments(turn_peaks, distance_threshold=15)
+
+print("Segments of green points:")
+for i, seg in enumerate(segments):
+    print(f"Segment {i+1}: {seg}")
+
+for i, segment in enumerate(segments):
+    R = compute_segment_radius(xs, ys, segment)
+    if R is None or R == float('inf'):
+        print(f"Segment {i+1}: radius undefined or very large (almost straight)")
+    else:
+        print(f"Segment {i+1}: average radius of curvature = {R:.3f}")

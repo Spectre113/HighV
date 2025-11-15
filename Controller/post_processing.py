@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
@@ -162,3 +163,67 @@ def compute_green_distances(green_indices):
         distances.append((a, b, b - a))
 
     return distances
+
+def split_into_segments(green_indices, distance_threshold=20):
+    green_indices = sorted(green_indices)
+    distances = compute_green_distances(green_indices)
+    
+    segments = []
+    current_segment = [green_indices[0]]
+    
+    for a, b, d in distances:
+        if d <= distance_threshold:
+            current_segment.append(b)
+        else:
+            segments.append(current_segment)
+            current_segment = [b]
+    if current_segment:
+        segments.append(current_segment)
+    
+    return segments
+
+def midpoint(p1, p2):
+    return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+
+def distance(p1, p2):
+    return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+def triangle_area(A, B, C):
+    return abs(
+        A[0]*(B[1]-C[1]) +
+        B[0]*(C[1]-A[1]) +
+        C[0]*(A[1]-B[1])
+    ) / 2
+
+def radius_of_circumcircle(A, B, C):
+    a = distance(B, C)
+    b = distance(A, C)
+    c = distance(A, B)
+    area = triangle_area(A, B, C)
+    if area == 0:
+        return float('inf')
+    return (a * b * c) / (4 * area)
+
+def compute_segment_radius(xs, ys, segment):
+    if len(segment) == 2:
+        A = (xs[segment[0]], ys[segment[0]])
+        C = (xs[segment[1]], ys[segment[1]])
+        B = midpoint(A, C)
+        R = radius_of_circumcircle(A, B, C)
+        return R
+    
+    elif len(segment) < 2:
+        return None
+    
+    else:
+        radii = []
+        for i in range(len(segment) - 2):
+            A = (xs[segment[i]], ys[segment[i]])
+            B = (xs[segment[i+1]], ys[segment[i+1]])
+            C = (xs[segment[i+2]], ys[segment[i+2]])
+            R = radius_of_circumcircle(A, B, C)
+            radii.append(R)
+        if not radii:
+            return None
+        average_radius = sum(radii) / len(radii)
+        return 1/average_radius
