@@ -200,7 +200,7 @@ print("Distance b/w green points:")
 for a, b, d in green_distances:
     print(f"{a} → {b}   distance = {d}")
 
-segments = split_into_segments(turn_peaks, distance_threshold=15)
+segments = split_into_segments(turn_peaks, distance_threshold=13)
 
 print("Segments of green points:")
 for i, seg in enumerate(segments):
