@@ -4,7 +4,19 @@ import matplotlib.pyplot as plt
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
-from post_processing import calculate_curvature_global_spline, normalize_coordinates, plot_curvature, plot_trajectory, plot_trajectory_with_smoothing, smooth_coordinates, smooth_trajectory_with_window
+from post_processing import (
+    normalize_coordinates,
+    plot_trajectory,
+    smooth_coordinates,
+    smooth_trajectory_with_window,
+    plot_trajectory_with_smoothing,
+    calculate_curvature_global_spline,
+    plot_curvature_visual,
+    detect_turn_segments,
+    analyze_turns,
+    plot_turns_on_trajectory,
+    plot_turns_on_curvature
+)
 
 
 robot = Robot()
@@ -65,7 +77,7 @@ cameras = {
     'right': right_camera
 }
 
-speed = 18
+speed = 13
 angle = 0.0
 err = 0.0
 
@@ -193,5 +205,16 @@ smooth_xs_norm, smooth_ys_norm, _, _, _, _ = normalize_coordinates(smooth_xs, sm
 plot_trajectory(smooth_xs_norm, smooth_ys_norm)
 plot_trajectory_with_smoothing(xs_norm, ys_norm, smooth_xs_norm, smooth_ys_norm)
 
-curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys, threshold=0.01)
-plot_curvature(curvature)
+curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys)
+
+turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.1, min_length=15)
+
+print("Detected turn apexes:")
+for i, turn in enumerate(turns_info, start=1):
+    apex_idx = turn['apex_idx']
+    apex_radius = turn['apex_radius']
+    apex_curvature = turn['apex_curvature']
+    print(f"Turn {i}: Apex index = {apex_idx}, Radius = {apex_radius:.2f} m, Curvature = {apex_curvature:.4f}")
+
+plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info)
+plot_turns_on_curvature(curvature, turns_info, threshold=0.05)
