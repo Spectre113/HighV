@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
-from post_processing import compute_green_distances, compute_segment_radius, find_turn_peaks, normalize_coordinates, plot_trajectory, plot_smoothed_trajectory, smooth_trajectory_with_subsampling, split_into_segments
+from post_processing import calculate_curvature_global_spline, normalize_coordinates, plot_curvature, plot_trajectory, plot_trajectory_with_smoothing, smooth_coordinates, smooth_trajectory_with_window
 
 
 robot = Robot()
@@ -178,37 +178,20 @@ try:
 except KeyboardInterrupt:
     pass
 
-
-turn_peaks, turn_starts, turn_ends = find_turn_peaks(yaw_rates, threshold=0.12, window_size=5)
-
 xs = [p[0] for p in positions]
 ys = [p[1] for p in positions]
 
 xs_norm, ys_norm, min_x, max_x, min_y, max_y = normalize_coordinates(xs, ys)
 
-print("Green points (Turn Peaks) coordinates (normalized):")
-for i in turn_peaks:
-    print(f"Index: {i}, X: {xs[i]:.4f}, Y: {ys[i]:.4f}")
+plot_trajectory(xs_norm, ys_norm)
 
-plot_trajectory(xs_norm, ys_norm, turn_starts, turn_ends, turn_peaks)
+xs_smooth, ys_smooth = smooth_coordinates(xs, ys, window_length=13, polyorder=3)
+smooth_xs, smooth_ys = smooth_trajectory_with_window(xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100)
 
-plot_smoothed_trajectory(xs, ys, turn_peaks, min_x, max_x, min_y, max_y)
+smooth_xs_norm, smooth_ys_norm, _, _, _, _ = normalize_coordinates(smooth_xs, smooth_ys)
 
-green_distances = compute_green_distances(turn_peaks)
+plot_trajectory(smooth_xs_norm, smooth_ys_norm)
+plot_trajectory_with_smoothing(xs_norm, ys_norm, smooth_xs_norm, smooth_ys_norm)
 
-print("Distance b/w green points:")
-for a, b, d in green_distances:
-    print(f"{a} → {b}   distance = {d}")
-
-segments = split_into_segments(turn_peaks, distance_threshold=13)
-
-print("Segments of green points:")
-for i, seg in enumerate(segments):
-    print(f"Segment {i+1}: {seg}")
-
-for i, segment in enumerate(segments):
-    R = compute_segment_radius(xs, ys, segment)
-    if R is None or R == float('inf'):
-        print(f"Segment {i+1}: radius undefined or very large (almost straight)")
-    else:
-        print(f"Segment {i+1}: average radius of curvature = {R:.3f}")
+curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys, threshold=0.01)
+plot_curvature(curvature)
