@@ -11,11 +11,10 @@ from post_processing import (
     smooth_trajectory_with_window,
     plot_trajectory_with_smoothing,
     calculate_curvature_global_spline,
-    plot_curvature_visual,
-    detect_turn_segments,
     analyze_turns,
-    plot_turns_on_trajectory,
-    plot_turns_on_curvature
+    add_scaled_radius_and_intersections,
+    merge_overlapping_scaled_circles,
+    plot_turns_on_trajectory
 )
 
 
@@ -77,7 +76,7 @@ cameras = {
     'right': right_camera
 }
 
-speed = 13
+speed = 18
 angle = 0.0
 err = 0.0
 
@@ -197,24 +196,16 @@ xs_norm, ys_norm, min_x, max_x, min_y, max_y = normalize_coordinates(xs, ys)
 
 plot_trajectory(xs_norm, ys_norm)
 
-xs_smooth, ys_smooth = smooth_coordinates(xs, ys, window_length=13, polyorder=3)
+xs_smooth, ys_smooth = smooth_coordinates(xs, ys, window_length=15, polyorder=4)
 smooth_xs, smooth_ys = smooth_trajectory_with_window(xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100)
-
-smooth_xs_norm, smooth_ys_norm, _, _, _, _ = normalize_coordinates(smooth_xs, smooth_ys)
-
-plot_trajectory(smooth_xs_norm, smooth_ys_norm)
-plot_trajectory_with_smoothing(xs_norm, ys_norm, smooth_xs_norm, smooth_ys_norm)
 
 curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys)
 
-turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.1, min_length=15)
+turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.1, min_length=18)
 
-print("Detected turn apexes:")
-for i, turn in enumerate(turns_info, start=1):
-    apex_idx = turn['apex_idx']
-    apex_radius = turn['apex_radius']
-    apex_curvature = turn['apex_curvature']
-    print(f"Turn {i}: Apex index = {apex_idx}, Radius = {apex_radius:.2f} m, Curvature = {apex_curvature:.4f}")
+turns_info = add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=7.0, scale_min=2, scale_max=5.0)
 
-plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info)
-plot_turns_on_curvature(curvature, turns_info, threshold=0.05)
+turns_info_merged = merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys)
+
+# визуализируем уже объединённые/обработанные повороты
+plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info_merged)

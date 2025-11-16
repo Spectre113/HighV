@@ -60,7 +60,7 @@ def plot_trajectory_with_smoothing(xs, ys, smooth_xs, smooth_ys):
     plt.show()
 
 
-def smooth_coordinates(xs, ys, window_length=11, polyorder=3):
+def smooth_coordinates(xs, ys, window_length=15, polyorder=4):
     xs = np.asarray(xs)
     ys = np.asarray(ys)
     if window_length % 2 == 0:
@@ -227,8 +227,8 @@ def filter_turns(turns_info, min_points=20, min_peak_curvature=0.02, min_radius=
     return out
 
 def analyze_turns_robust(smooth_xs, smooth_ys,
-                         threshold=0.08,
-                         min_length_pts=20,
+                         threshold=0.1,
+                         min_length_pts=18,
                          merge_gap=20,
                          min_peak_curvature=0.02,
                          min_radius=0.5,
@@ -336,45 +336,197 @@ def plot_curvature_visual(curvature, threshold=0.01):
     plt.tight_layout()
     plt.show()
 
+def draw_scaled_circle(ax, center, radius, color=None, linestyle='--', alpha=0.5, fill=False, linewidth=1.5):
+    """
+    Отрисовать окружность на ax. Вынесено в отдельную функцию для повторного использования.
+    center: (x,y)
+    radius: float
+    """
+    if not np.isfinite(radius) or radius <= 0:
+        return None
+    circle = plt.Circle((center[0], center[1]), radius, color=color, fill=fill,
+                        linestyle=linestyle, alpha=alpha, linewidth=linewidth)
+    ax.add_patch(circle)
+    return circle
+
+def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=7.0, scale_min=2.0, scale_max=5.0):
+    xs = np.asarray(smooth_xs)
+    ys = np.asarray(smooth_ys)
+    n = len(xs)
+
+    for t in turns_info:
+        apex_x = float(xs[t['apex_idx']])
+        apex_y = float(ys[t['apex_idx']])
+        R = float(t.get('apex_radius', np.inf))
+
+        if not np.isfinite(R) or R <= 0:
+            t['scaled_radius'] = None
+            t['apex_coords'] = (apex_x, apex_y)
+            t['entry_idx'] = None
+            t['exit_idx'] = None
+            continue
+
+        scale = np.clip(C / R, scale_min, scale_max)
+        scaled_radius = R * scale
+
+        t['scaled_radius'] = float(scaled_radius)
+        t['apex_coords'] = (apex_x, apex_y)
+
+        dist = np.sqrt((xs - apex_x)**2 + (ys - apex_y)**2)
+        tol = max(1e-6, scaled_radius * 0.05)
+        close_points_idx = np.where(np.abs(dist - scaled_radius) < tol)[0]
+
+        if len(close_points_idx) >= 2:
+            t['entry_idx'] = int(close_points_idx[0])
+            t['exit_idx'] = int(close_points_idx[-1])
+
+        else:
+            if close_points_idx.size == 1:
+                t['entry_idx'] = int(close_points_idx[0])
+                t['exit_idx'] = int(close_points_idx[0])
+            else:
+                t['entry_idx'] = None
+                t['exit_idx'] = None
+
+    return turns_info
+
+def circles_intersect(c1, r1, c2, r2, eps=1e-9):
+    d = math.hypot(c1[0]-c2[0], c1[1]-c2[1])
+    if d <= (r1 + r2 + eps) and d + eps >= abs(r1 - r2):
+        return True
+    return False
+
+def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
+    xs = np.asarray(smooth_xs)
+    ys = np.asarray(smooth_ys)
+    n = len(xs)
+
+    if s is None:
+        s = compute_arc_length(xs, ys)
+    else:
+        s = np.asarray(s)
+
+    used = [False] * len(turns_info)
+    indexed = sorted(enumerate(turns_info), key=lambda ie: ie[1]['apex_idx'])
+    result = []
+
+    i = 0
+    while i < len(indexed):
+        idx_i, ti = indexed[i]
+        if used[idx_i]:
+            i += 1
+            continue
+
+        merged_turn = dict(ti)
+        used[idx_i] = True
+        j = i + 1
+        while j < len(indexed):
+            idx_j, tj = indexed[j]
+            if used[idx_j]:
+                j += 1
+                continue
+
+            c1 = tuple(merged_turn.get('apex_coords', (None, None)))
+            r1 = merged_turn.get('scaled_radius', None)
+            c2 = tuple(tj.get('apex_coords', (None, None)))
+            r2 = tj.get('scaled_radius', None)
+
+            if c1[0] is None or c2[0] is None or r1 is None or r2 is None:
+                break
+
+            if circles_intersect(c1, r1, c2, r2):
+                apex_idx_1 = max(0, min(len(s)-1, int(merged_turn['apex_idx'])))
+                apex_idx_2 = max(0, min(len(s)-1, int(tj['apex_idx'])))
+                s1 = float(s[apex_idx_1])
+                s2 = float(s[apex_idx_2])
+                s_mid = 0.5 * (s1 + s2)
+
+                new_apex_idx = int(np.argmin(np.abs(s - s_mid)))
+                x_mid_on_track = float(xs[new_apex_idx])
+                y_mid_on_track = float(ys[new_apex_idx])
+
+                new_start = min(merged_turn.get('start', apex_idx_1), tj.get('start', apex_idx_2))
+                new_end = max(merged_turn.get('end', apex_idx_1), tj.get('end', apex_idx_2))
+                new_s_start = min(merged_turn.get('s_start', s1), tj.get('s_start', s2))
+                new_s_end = max(merged_turn.get('s_end', s1), tj.get('s_end', s2))
+
+                curv1 = float(merged_turn.get('apex_curvature', 0.0))
+                curv2 = float(tj.get('apex_curvature', 0.0))
+                if abs(curv1) >= abs(curv2):
+                    new_apex_curv = curv1
+
+                else:
+                    new_apex_curv = curv2
+                new_apex_radius = float(np.inf) if abs(new_apex_curv) < 1e-12 else 1.0 / abs(new_apex_curv)
+
+                entry_candidate = merged_turn.get('entry_idx', None)
+                exit_candidate = tj.get('exit_idx', None)
+
+                merged_turn = {
+                    'start': int(new_start),
+                    'end': int(new_end),
+                    'apex_idx': int(new_apex_idx),
+                    'apex_curvature': float(new_apex_curv),
+                    'apex_radius': float(new_apex_radius),
+                    'length': float(new_s_end - new_s_start),
+                    's_start': float(new_s_start),
+                    's_end': float(new_s_end),
+                    'apex_coords': (x_mid_on_track, y_mid_on_track),
+                    'scaled_radius': float(0.5 * (r1 + r2)),
+                    'entry_idx': (int(entry_candidate) if entry_candidate is not None else None),
+                    'exit_idx': (int(exit_candidate) if exit_candidate is not None else None)
+                }
+
+                used[idx_j] = True
+                j += 1
+            else:
+                break
+
+        result.append(merged_turn)
+        i += 1
+
+    result = sorted(result, key=lambda t: t['apex_idx'])
+
+    return result
+
 def plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info, show_apex=True, figsize=(8,8)):
     plt.figure(figsize=figsize)
     plt.plot(smooth_xs, smooth_ys, color='gray', linewidth=1, label='Smoothed trajectory')
     cmap = plt.get_cmap('tab10')
+    ax = plt.gca()
+
     for i, info in enumerate(turns_info):
         st, ed = info['start'], info['end']
         color = cmap(i % 10)
         plt.plot(smooth_xs[st:ed+1], smooth_ys[st:ed+1], color=color, linewidth=2.2, label=f'Turn {i+1}')
         if show_apex:
-            ax = plt.gca()
-            ax.plot(smooth_xs[info['apex_idx']], smooth_ys[info['apex_idx']],
+            apex_x = float(info['apex_coords'][0]) if 'apex_coords' in info else float(smooth_xs[info['apex_idx']])
+            apex_y = float(info['apex_coords'][1]) if 'apex_coords' in info else float(smooth_ys[info['apex_idx']])
+            apex_radius = info.get('apex_radius', np.inf)
+
+            ax.plot(apex_x, apex_y,
                     marker='o', markersize=6, color='k', markeredgecolor='yellow')
-            ax.text(smooth_xs[info['apex_idx']], smooth_ys[info['apex_idx']],
-                    f" a{i+1}\nR={info['apex_radius']:.1f}m", fontsize=8, color='k')
+            ax.text(apex_x, apex_y,
+                    f" a{i+1}\nR={apex_radius:.1f}m", fontsize=8, color='k')
+
+            if np.isfinite(apex_radius) and apex_radius < 1e6:
+                draw_scaled_circle(ax, (apex_x, apex_y), apex_radius, color=color, linestyle='--', alpha=0.25, fill=False, linewidth=1.0)
+
+            scaled_r = info.get('scaled_radius', None)
+            if scaled_r is not None and np.isfinite(scaled_r):
+                draw_scaled_circle(ax, (apex_x, apex_y), scaled_r, color=color, linestyle=':', alpha=0.35, fill=False, linewidth=1.5)
+
+                eidx = info.get('entry_idx', None)
+                xidx = info.get('exit_idx', None)
+                if eidx is not None and 0 <= eidx < len(smooth_xs):
+                    ax.plot(smooth_xs[eidx], smooth_ys[eidx], marker='D', markersize=8, color=color, label=f'Entry Turn {i+1}')
+                if xidx is not None and 0 <= xidx < len(smooth_xs):
+                    ax.plot(smooth_xs[xidx], smooth_ys[xidx], marker='X', markersize=8, color=color, label=f'Exit Turn {i+1}')
+
     plt.xlabel('X')
     plt.ylabel('Y')
-    plt.title('Trajectory with detected turns (segments) and apexes')
+    plt.title('Trajectory with detected turns, apexes and adaptive scaled circle intersections')
     plt.axis('equal')
-    plt.grid(True)
-    plt.legend(loc='upper right', fontsize='small')
-    plt.show()
-
-def plot_turns_on_curvature(curvature, turns_info, threshold=0.01, figsize=(12,4)):
-    plt.figure(figsize=figsize)
-    x = np.arange(len(curvature))
-    plt.plot(x, curvature, color='lightgray', linewidth=1, label='Curvature (full)')
-    cmap = plt.get_cmap('tab10')
-    for i, info in enumerate(turns_info):
-        st, ed = info['start'], info['end']
-        color = cmap(i % 10)
-        plt.plot(x[st:ed+1], curvature[st:ed+1], color=color, linewidth=2, label=f'Turn {i+1}')
-        ai = info['apex_idx']
-        plt.plot(ai, curvature[ai], marker='o', markersize=6, color='k', markeredgecolor=color)
-        plt.text(ai, curvature[ai], f" R={info['apex_radius']:.1f}m", fontsize=8, va='bottom')
-    plt.axhline(y=threshold, color='blue', linestyle='--', linewidth=1)
-    plt.axhline(y=-threshold, color='blue', linestyle='--', linewidth=1)
-    plt.xlabel('Index along trajectory')
-    plt.ylabel('Curvature (1/m)')
-    plt.title('Curvature with detected turns')
     plt.grid(True)
     plt.legend(loc='upper right', fontsize='small')
     plt.show()
