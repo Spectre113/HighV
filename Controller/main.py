@@ -5,11 +5,12 @@ import matplotlib.pyplot as plt
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
 from post_processing import (
+    compute_turns_vmax_amax,
     normalize_coordinates,
     plot_trajectory,
+    print_turns_vmax_summary,
     smooth_coordinates,
     smooth_trajectory_with_window,
-    plot_trajectory_with_smoothing,
     calculate_curvature_global_spline,
     analyze_turns,
     add_scaled_radius_and_intersections,
@@ -203,8 +204,11 @@ curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys)
 
 turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.1, min_length=18)
 
-turns_info = add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=7.0, scale_min=2, scale_max=5.0)
-
 turns_info_merged = merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys)
 
-plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info_merged)
+turns_info = add_scaled_radius_and_intersections(turns_info_merged, smooth_xs, smooth_ys, C=7.0, scale_min=2, scale_max=5.0)
+
+plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info)
+
+turns_info = compute_turns_vmax_amax(turns_info, mass=1900.0, mu=1.0, g=9.81, downforce=0.0)
+print_turns_vmax_summary(turns_info)

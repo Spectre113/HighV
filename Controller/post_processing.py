@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 from scipy.signal import savgol_filter
+from copy import deepcopy
 
 def compute_arc_length(xs, ys):
     xs = np.asarray(xs)
@@ -344,10 +345,10 @@ def draw_scaled_circle(ax, center, radius, color=None, linestyle='--', alpha=0.5
     ax.add_patch(circle)
     return circle
 
-def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=10.0, scale_min=4.0, scale_max=7.0):
+def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys,
+                                        C=10.0, scale_min=4.0, scale_max=7.0):
     xs = np.asarray(smooth_xs)
     ys = np.asarray(smooth_ys)
-    n = len(xs)
 
     for t in turns_info:
         apex_x = float(xs[t['apex_idx']])
@@ -367,35 +368,57 @@ def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=10.0
         t['scaled_radius'] = float(scaled_radius)
         t['apex_coords'] = (apex_x, apex_y)
 
-        dist = np.sqrt((xs - apex_x)**2 + (ys - apex_y)**2)
-        tol = max(1e-6, scaled_radius * 0.05)
-        close_points_idx = np.where(np.abs(dist - scaled_radius) < tol)[0]
+        idxs = find_circle_track_intersections(
+            (apex_x, apex_y),
+            scaled_radius,
+            xs, ys
+        )
 
-        if len(close_points_idx) >= 2:
-            t['entry_idx'] = int(close_points_idx[0])
-            t['exit_idx'] = int(close_points_idx[-1])
-
+        if len(idxs) >= 2:
+            t['entry_idx'] = int(idxs[0])
+            t['exit_idx'] = int(idxs[-1])
+        elif len(idxs) == 1:
+            t['entry_idx'] = t['exit_idx'] = int(idxs[0])
         else:
-            if close_points_idx.size == 1:
-                t['entry_idx'] = int(close_points_idx[0])
-                t['exit_idx'] = int(close_points_idx[0])
-            else:
-                t['entry_idx'] = None
-                t['exit_idx'] = None
+            t['entry_idx'] = None
+            t['exit_idx'] = None
 
     return turns_info
 
 def circles_intersect(c1, r1, c2, r2, eps=1e-9):
+    if r1 is None or r2 is None:
+        return False
+    
+    if not (np.isfinite(r1) and np.isfinite(r2)):
+        return False
+    
     d = math.hypot(c1[0]-c2[0], c1[1]-c2[1])
     if d <= (r1 + r2 + eps) and d + eps >= abs(r1 - r2):
         return True
+    
     return False
 
+def find_circle_track_intersections(center, radius, xs, ys, tol_ratio=0.05):
+    cx, cy = center
+    xs = np.asarray(xs)
+    ys = np.asarray(ys)
 
-def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C=10.0, scale_min=4.0, scale_max=7.0):
+    if radius is None or not np.isfinite(radius) or radius <= 0:
+        return []
+
+    dist = np.sqrt((xs - cx)**2 + (ys - cy)**2)
+    tol = max(1e-6, radius * tol_ratio)
+
+    return np.where(np.abs(dist - radius) < tol)[0].tolist()
+
+
+
+def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None,
+                                     C=10.0, scale_min=4.0, scale_max=7.0,
+                                     eps=1e-9):
+
     xs = np.asarray(smooth_xs)
     ys = np.asarray(smooth_ys)
-    n = len(xs)
 
     if s is None:
         s = compute_arc_length(xs, ys)
@@ -414,8 +437,23 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C
             continue
 
         merged_turn = dict(ti)
-        merged_turn['entry_idx'] = None
-        merged_turn['exit_idx'] = None
+
+        apex_idx_i = int(merged_turn.get('apex_idx', 0))
+        merged_turn['apex_coords'] = (
+            float(xs[apex_idx_i]),
+            float(ys[apex_idx_i])
+        )
+
+        R_i = float(merged_turn.get('apex_radius', np.inf))
+        if np.isfinite(R_i) and R_i > 0:
+            scale_i = np.clip(C / R_i, scale_min, scale_max)
+            merged_turn['scaled_radius'] = float(R_i * scale_i)
+        else:
+            merged_turn['scaled_radius'] = None
+
+        merged_turn['entry_idx'] = merged_turn.get('entry_idx', None)
+        merged_turn['exit_idx'] = merged_turn.get('exit_idx', None)
+
         used[idx_i] = True
 
         j = i + 1
@@ -425,34 +463,108 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C
                 j += 1
                 continue
 
-            c1 = tuple(merged_turn.get('apex_coords', (None, None)))
-            r1 = merged_turn.get('scaled_radius', None)
-            c2 = tuple(tj.get('apex_coords', (None, None)))
-            r2 = tj.get('scaled_radius', None)
+            c1 = merged_turn['apex_coords']
+            r1_inner = merged_turn.get('apex_radius', None)
+            r1_outer = merged_turn.get('scaled_radius', None)
 
-            if c1[0] is None or c2[0] is None or r1 is None or r2 is None:
+            apex_idx_j = int(tj.get('apex_idx', 0))
+            c2 = (
+                float(xs[apex_idx_j]),
+                float(ys[apex_idx_j])
+            )
+            r2_inner = tj.get('apex_radius', None)
+            if r2_inner is not None:
+                r2_inner = float(r2_inner)
+
+            r2_outer = tj.get('scaled_radius', None)
+            if r2_outer is None and (r2_inner is not None) and np.isfinite(r2_inner) and r2_inner > 0:
+                scale_j = np.clip(C / float(r2_inner), scale_min, scale_max)
+                r2_outer = float(r2_inner * scale_j)
+
+            if c1[0] is None or c2[0] is None:
                 break
 
-            if circles_intersect(c1, r1, c2, r2):
-                apex_idx_1 = max(0, min(len(s)-1, int(merged_turn['apex_idx'])))
-                apex_idx_2 = max(0, min(len(s)-1, int(tj['apex_idx'])))
+            intersect_inner = False
+            intersect_outer = False
+            intersect_outer_inner_1 = False
+            intersect_outer_inner_2 = False
+
+            if r1_inner is not None and r2_inner is not None:
+                try:
+                    intersect_inner = circles_intersect(
+                        c1, float(r1_inner),
+                        c2, float(r2_inner),
+                        eps=eps
+                    )
+                except Exception:
+                    intersect_inner = False
+
+            if r1_outer is not None and r2_outer is not None:
+                try:
+                    intersect_outer = circles_intersect(
+                        c1, float(r1_outer),
+                        c2, float(r2_outer),
+                        eps=eps
+                    )
+                except Exception:
+                    intersect_outer = False
+
+            if r1_outer is not None and r2_inner is not None:
+                try:
+                    intersect_outer_inner_1 = circles_intersect(
+                        c1, float(r1_outer),
+                        c2, float(r2_inner),
+                        eps=eps
+                    )
+                except Exception:
+                    intersect_outer_inner_1 = False
+
+            if r1_inner is not None and r2_outer is not None:
+                try:
+                    intersect_outer_inner_2 = circles_intersect(
+                        c1, float(r1_inner),
+                        c2, float(r2_outer),
+                        eps=eps
+                    )
+                except Exception:
+                    intersect_outer_inner_2 = False
+
+            if (intersect_inner or
+                intersect_outer or
+                intersect_outer_inner_1 or
+                intersect_outer_inner_2):
+
+                apex_idx_1 = int(merged_turn['apex_idx'])
+                apex_idx_2 = int(tj['apex_idx'])
                 s1 = float(s[apex_idx_1])
                 s2 = float(s[apex_idx_2])
                 s_mid = 0.5 * (s1 + s2)
 
                 new_apex_idx = int(np.argmin(np.abs(s - s_mid)))
-                x_mid_on_track = float(xs[new_apex_idx])
-                y_mid_on_track = float(ys[new_apex_idx])
+                x_mid = float(xs[new_apex_idx])
+                y_mid = float(ys[new_apex_idx])
 
-                new_start = min(merged_turn.get('start', apex_idx_1), tj.get('start', apex_idx_2))
-                new_end = max(merged_turn.get('end', apex_idx_1), tj.get('end', apex_idx_2))
-                new_s_start = min(merged_turn.get('s_start', s1), tj.get('s_start', s2))
-                new_s_end = max(merged_turn.get('s_end', s1), tj.get('s_end', s2))
+                new_start = min(merged_turn.get('start', apex_idx_1),
+                                tj.get('start', apex_idx_2))
+                new_end   = max(merged_turn.get('end', apex_idx_1),
+                                tj.get('end', apex_idx_2))
+
+                new_s_start = min(merged_turn.get('s_start', s1),
+                                  tj.get('s_start', s2))
+                new_s_end   = max(merged_turn.get('s_end', s1),
+                                  tj.get('s_end', s2))
 
                 curv1 = float(merged_turn.get('apex_curvature', 0.0))
                 curv2 = float(tj.get('apex_curvature', 0.0))
+
                 new_apex_curv = curv1 if abs(curv1) >= abs(curv2) else curv2
                 new_apex_radius = float(np.inf) if abs(new_apex_curv) < 1e-12 else 1.0 / abs(new_apex_curv)
+
+                if np.isfinite(new_apex_radius) and new_apex_radius > 0:
+                    new_scale = np.clip(C / new_apex_radius, scale_min, scale_max)
+                    new_scaled_radius = float(new_apex_radius * new_scale)
+                else:
+                    new_scaled_radius = None
 
                 merged_turn = {
                     'start': int(new_start),
@@ -463,14 +575,15 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C
                     'length': float(new_s_end - new_s_start),
                     's_start': float(new_s_start),
                     's_end': float(new_s_end),
-                    'apex_coords': (x_mid_on_track, y_mid_on_track),
-                    'scaled_radius': None,
+                    'apex_coords': (x_mid, y_mid),
+                    'scaled_radius': new_scaled_radius,
                     'entry_idx': None,
                     'exit_idx': None
                 }
 
                 used[idx_j] = True
                 j += 1
+
             else:
                 break
 
@@ -478,10 +591,12 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C
         i += 1
 
     result = sorted(result, key=lambda t: t['apex_idx'])
-    result = add_scaled_radius_and_intersections(result, smooth_xs, smooth_ys, C=C, scale_min=scale_min, scale_max=scale_max)
+    result = add_scaled_radius_and_intersections(
+        result, smooth_xs, smooth_ys,
+        C=C, scale_min=scale_min, scale_max=scale_max
+    )
 
     return result
-
 
 def plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info, show_apex=True, figsize=(8,8)):
     plt.figure(figsize=figsize)
@@ -531,7 +646,7 @@ def max_accelerations(mass, mu, g=9.81, downforce=0.0):
     max_acceleration = max_friction_force / mass
     max_lateral_acc = max_acceleration
     max_longitudinal_acc = max_acceleration
-    
+
     return max_lateral_acc, max_longitudinal_acc
 
 def max_speed(apex_radii, max_lateral_acc):
@@ -539,3 +654,89 @@ def max_speed(apex_radii, max_lateral_acc):
     speeds = np.sqrt(max_lateral_acc * apex_radii)
 
     return speeds
+
+
+def _compute_allowed_lateral_acceleration(mass, mu, g=9.81, downforce=0.0):
+    if mass is None or mass <= 0:
+        raise ValueError("mass must be positive")
+    
+    return mu * (g + (downforce / mass))
+
+
+def _vmax_from_radius(a_allowed, radius):
+    if radius is None:
+        return np.inf
+    try:
+        R = float(radius)
+    except Exception:
+        return np.inf
+    if not np.isfinite(R) or R <= 0:
+        return np.inf
+    return math.sqrt(max(0.0, a_allowed * R))
+
+
+def compute_turns_vmax_amax(turns_info, mass=1500.0, mu=1.0, g=9.81, downforce=0.0):
+    if turns_info is None:
+        return []
+
+    a_allowed = _compute_allowed_lateral_acceleration(mass, mu, g, downforce)
+
+    out = deepcopy(turns_info)
+    for info in out:
+        apex_r = info.get('apex_radius', None)
+        apex_v = _vmax_from_radius(a_allowed, apex_r)
+
+        scaled_r = info.get('scaled_radius', None)
+        entry_v = _vmax_from_radius(a_allowed, scaled_r if scaled_r is not None else apex_r)
+        exit_v = _vmax_from_radius(a_allowed, scaled_r if scaled_r is not None else apex_r)
+
+        info['apex_a_max'] = float(a_allowed)
+        info['apex_v_max'] = float(apex_v) if np.isfinite(apex_v) else float('inf')
+
+        info['entry_a_max'] = float(a_allowed)
+        info['entry_v_max'] = float(entry_v) if np.isfinite(entry_v) else float('inf')
+
+        info['exit_a_max'] = float(a_allowed)
+        info['exit_v_max'] = float(exit_v) if np.isfinite(exit_v) else float('inf')
+
+    return out
+
+
+def print_turns_vmax_summary(turns_info, to_kmh=True, show_indices=True):
+    if not turns_info:
+        print("No turns to summarize")
+        return
+
+    for i, t in enumerate(turns_info):
+        print(f"Turn {i+1}:")
+        a = t.get('apex_a_max', None)
+        v = t.get('apex_v_max', None)
+        if a is None or v is None:
+            print("  apex: not available")
+        else:
+            if to_kmh and np.isfinite(v):
+                print(f"  apex: a_max = {a:.3f} m/s^2, V_max = {v:.3f} m/s ({v*3.6:.1f} km/h)")
+            elif to_kmh and not np.isfinite(v):
+                print(f"  apex: a_max = {a:.3f} m/s^2, V_max = inf")
+            else:
+                print(f"  apex: a_max = {a:.3f} m/s^2, V_max = {v:.3f} m/s")
+
+        ev = t.get('entry_v_max', None)
+        exv = t.get('exit_v_max', None)
+        if ev is None or exv is None:
+            print("  entry/exit: not available")
+        else:
+            if to_kmh:
+                ev_kmh = ev*3.6 if np.isfinite(ev) else float('inf')
+                exv_kmh = exv*3.6 if np.isfinite(exv) else float('inf')
+                print(f"  entry: V_max = {ev:.3f} m/s ({ev_kmh:.1f} km/h), exit: V_max = {exv:.3f} m/s ({exv_kmh:.1f} km/h)")
+            else:
+                print(f"  entry: V_max = {ev:.3f} m/s, exit: V_max = {exv:.3f} m/s")
+
+        if show_indices:
+            eidx = t.get('entry_idx', None)
+            xidx = t.get('exit_idx', None)
+            aidx = t.get('apex_idx', None)
+            print(f"    indices -> apex: {aidx}, entry: {eidx}, exit: {xidx}")
+
+        print("")
