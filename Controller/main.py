@@ -76,7 +76,7 @@ cameras = {
     'right': right_camera
 }
 
-speed = 18
+speed = 14
 angle = 0.0
 err = 0.0
 
@@ -207,5 +207,4 @@ turns_info = add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_y
 
 turns_info_merged = merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys)
 
-# визуализируем уже объединённые/обработанные повороты
 plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info_merged)

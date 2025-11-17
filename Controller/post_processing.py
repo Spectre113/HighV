@@ -337,11 +337,6 @@ def plot_curvature_visual(curvature, threshold=0.01):
     plt.show()
 
 def draw_scaled_circle(ax, center, radius, color=None, linestyle='--', alpha=0.5, fill=False, linewidth=1.5):
-    """
-    Отрисовать окружность на ax. Вынесено в отдельную функцию для повторного использования.
-    center: (x,y)
-    radius: float
-    """
     if not np.isfinite(radius) or radius <= 0:
         return None
     circle = plt.Circle((center[0], center[1]), radius, color=color, fill=fill,
@@ -349,7 +344,7 @@ def draw_scaled_circle(ax, center, radius, color=None, linestyle='--', alpha=0.5
     ax.add_patch(circle)
     return circle
 
-def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=7.0, scale_min=2.0, scale_max=5.0):
+def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys, C=10.0, scale_min=4.0, scale_max=7.0):
     xs = np.asarray(smooth_xs)
     ys = np.asarray(smooth_ys)
     n = len(xs)
@@ -396,7 +391,8 @@ def circles_intersect(c1, r1, c2, r2, eps=1e-9):
         return True
     return False
 
-def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
+
+def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None, C=10.0, scale_min=4.0, scale_max=7.0):
     xs = np.asarray(smooth_xs)
     ys = np.asarray(smooth_ys)
     n = len(xs)
@@ -418,7 +414,10 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
             continue
 
         merged_turn = dict(ti)
+        merged_turn['entry_idx'] = None
+        merged_turn['exit_idx'] = None
         used[idx_i] = True
+
         j = i + 1
         while j < len(indexed):
             idx_j, tj = indexed[j]
@@ -452,15 +451,8 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
 
                 curv1 = float(merged_turn.get('apex_curvature', 0.0))
                 curv2 = float(tj.get('apex_curvature', 0.0))
-                if abs(curv1) >= abs(curv2):
-                    new_apex_curv = curv1
-
-                else:
-                    new_apex_curv = curv2
+                new_apex_curv = curv1 if abs(curv1) >= abs(curv2) else curv2
                 new_apex_radius = float(np.inf) if abs(new_apex_curv) < 1e-12 else 1.0 / abs(new_apex_curv)
-
-                entry_candidate = merged_turn.get('entry_idx', None)
-                exit_candidate = tj.get('exit_idx', None)
 
                 merged_turn = {
                     'start': int(new_start),
@@ -472,9 +464,9 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
                     's_start': float(new_s_start),
                     's_end': float(new_s_end),
                     'apex_coords': (x_mid_on_track, y_mid_on_track),
-                    'scaled_radius': float(0.5 * (r1 + r2)),
-                    'entry_idx': (int(entry_candidate) if entry_candidate is not None else None),
-                    'exit_idx': (int(exit_candidate) if exit_candidate is not None else None)
+                    'scaled_radius': None,
+                    'entry_idx': None,
+                    'exit_idx': None
                 }
 
                 used[idx_j] = True
@@ -486,8 +478,10 @@ def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None):
         i += 1
 
     result = sorted(result, key=lambda t: t['apex_idx'])
+    result = add_scaled_radius_and_intersections(result, smooth_xs, smooth_ys, C=C, scale_min=scale_min, scale_max=scale_max)
 
     return result
+
 
 def plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info, show_apex=True, figsize=(8,8)):
     plt.figure(figsize=figsize)
@@ -530,3 +524,18 @@ def plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info, show_apex=True, f
     plt.grid(True)
     plt.legend(loc='upper right', fontsize='small')
     plt.show()
+
+def max_accelerations(mass, mu, g=9.81, downforce=0.0):
+    normal_force = mass * g + downforce
+    max_friction_force = mu * normal_force
+    max_acceleration = max_friction_force / mass
+    max_lateral_acc = max_acceleration
+    max_longitudinal_acc = max_acceleration
+    
+    return max_lateral_acc, max_longitudinal_acc
+
+def max_speed(apex_radii, max_lateral_acc):
+    apex_radii = np.array(apex_radii)
+    speeds = np.sqrt(max_lateral_acc * apex_radii)
+
+    return speeds
