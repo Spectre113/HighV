@@ -1,6 +1,7 @@
 from controller import Robot
 import numpy as np
 import matplotlib.pyplot as plt
+import csv
 # from follow_model_line import LineFollowerController, LineFollowerController2
 from pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
@@ -17,7 +18,8 @@ from post_processing import (
     analyze_turns,
     add_scaled_radius_and_intersections,
     merge_overlapping_scaled_circles,
-    plot_turns_on_trajectory
+    plot_turns_on_trajectory,
+    smooth_full_trajectory_global_spline,
 )
 
 
@@ -200,11 +202,13 @@ xs_norm, ys_norm, min_x, max_x, min_y, max_y = normalize_coordinates(xs, ys)
 plot_trajectory(xs_norm, ys_norm)
 
 xs_smooth, ys_smooth = smooth_coordinates(xs, ys, window_length=15, polyorder=4)
-smooth_xs, smooth_ys = smooth_trajectory_with_window(xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100)
+smooth_xs_local, smooth_ys_local = smooth_trajectory_with_window(xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100)
+
+smooth_xs, smooth_ys = smooth_full_trajectory_global_spline(smooth_xs_local, smooth_ys_local, num_points=4 * len(smooth_xs_local))
 
 curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys)
 
-turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.1, min_length=18)
+turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.08, min_length=18)
 
 turns_info = merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys)
 
@@ -213,7 +217,55 @@ plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info)
 turns_info = compute_turns_vmax_amax(turns_info, mass=1900.0, mu=1.0, g=9.81, downforce=0.0)
 print_turns_vmax_summary(turns_info)
 
-new_xs, new_ys = generate_new_trajectory_with_hermite(smooth_xs, smooth_ys, turns_info,
-                                                     samples_per_segment=300, blend_points=0)
+new_xs, new_ys = generate_new_trajectory_with_hermite(
+    smooth_xs,
+    smooth_ys,
+    turns_info,
+    samples_per_segment=300,
+    blend_points=0,
+)
+
+trajectory_file = "trajectory_new.csv"
+np.savetxt(
+    trajectory_file,
+    np.column_stack((new_xs, new_ys)),
+    delimiter=",",
+    header="x,y",
+    comments="",
+)
+print(f"Saved new trajectory to {trajectory_file}")
+
+turn_points_file = "turn_points_with_limits.csv"
+with open(turn_points_file, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(
+        ["turn_id", "point_type", "index", "x", "y", "a_max", "v_max"]
+    )
+
+    n_points = len(smooth_xs)
+
+    for i, t in enumerate(turns_info):
+        for point_type, idx_key, a_key, v_key in [
+            ("apex", "apex_idx", "apex_a_max", "apex_v_max"),
+            ("entry", "entry_idx", "entry_a_max", "entry_v_max"),
+            ("exit", "exit_idx", "exit_a_max", "exit_v_max"),
+        ]:
+            idx = t.get(idx_key, None)
+            if idx is None:
+                continue
+            if not (0 <= idx < n_points):
+                continue
+
+            x = float(smooth_xs[idx])
+            y = float(smooth_ys[idx])
+            a_val = t.get(a_key, None)
+            v_val = t.get(v_key, None)
+
+            writer.writerow(
+                [i + 1, point_type, int(idx), x, y, a_val, v_val]
+            )
+
+print(f"Saved turn points and limits to {turn_points_file}")
+
 plot_new_vs_original(smooth_xs, smooth_ys, new_xs, new_ys)
 

@@ -175,6 +175,43 @@ def calculate_curvature_global_spline(smooth_xs, smooth_ys, threshold=None, retu
         return curvature_full, s
     return curvature_full
 
+def smooth_full_trajectory_global_spline(xs, ys, num_points=None):
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+
+    n = len(xs)
+    if n == 0:
+        return xs.copy(), ys.copy()
+    if n == 1:
+        return xs.copy(), ys.copy()
+
+    if num_points is None:
+        num_points = max(2 * n, 200)
+
+    s = compute_arc_length(xs, ys)
+
+    uniq_s, uniq_idx = np.unique(s, return_index=True)
+    if uniq_s.size < 2:
+        return xs.copy(), ys.copy()
+
+    xs_u = xs[uniq_idx]
+    ys_u = ys[uniq_idx]
+
+    try:
+        cs_x = CubicSpline(uniq_s, xs_u)
+        cs_y = CubicSpline(uniq_s, ys_u)
+    except Exception:
+        jitter = np.linspace(0.0, 1e-8, len(uniq_s))
+        uniq_s_j = uniq_s + jitter
+        cs_x = CubicSpline(uniq_s_j, xs_u)
+        cs_y = CubicSpline(uniq_s_j, ys_u)
+
+    s_new = np.linspace(uniq_s[0], uniq_s[-1], num_points)
+    new_xs = cs_x(s_new)
+    new_ys = cs_y(s_new)
+
+    return np.asarray(new_xs), np.asarray(new_ys)
+
 def detect_turn_segments(curvature, threshold=0.01, min_length=1):
     mask = np.abs(curvature) > threshold
     segments = []
@@ -675,7 +712,7 @@ def _vmax_from_radius(a_allowed, radius):
     return math.sqrt(max(0.0, a_allowed * R))
 
 
-def compute_turns_vmax_amax(turns_info, mass=1500.0, mu=1.0, g=9.81, downforce=0.0):
+def compute_turns_vmax_amax(turns_info, mass=1900.0, mu=1.0, g=9.81, downforce=0.0):
     if turns_info is None:
         return []
 
@@ -709,6 +746,7 @@ def print_turns_vmax_summary(turns_info, to_kmh=True, show_indices=True):
 
     for i, t in enumerate(turns_info):
         print(f"Turn {i+1}:")
+
         a = t.get('apex_a_max', None)
         v = t.get('apex_v_max', None)
         if a is None or v is None:
@@ -722,18 +760,21 @@ def print_turns_vmax_summary(turns_info, to_kmh=True, show_indices=True):
                 print(f"  apex: a_max = {a:.3f} m/s^2, V_max = {v:.3f} m/s")
 
         ev = t.get('entry_v_max', None)
+        ea = t.get('entry_a_max', None)
         exv = t.get('exit_v_max', None)
-        if ev is None or exv is None:
-            print("  entry/exit: not available")
+        exa = t.get('exit_a_max', None)
 
+        if ev is None or exv is None or ea is None or exa is None:
+            print("  entry/exit: not available")
         else:
             if to_kmh:
                 ev_kmh = ev*3.6 if np.isfinite(ev) else float('inf')
                 exv_kmh = exv*3.6 if np.isfinite(exv) else float('inf')
-                print(f"  entry: V_max = {ev:.3f} m/s ({ev_kmh:.1f} km/h), exit: V_max = {exv:.3f} m/s ({exv_kmh:.1f} km/h)")
-
+                print(f"  entry: a_max = {ea:.3f} m/s^2, V_max = {ev:.3f} m/s ({ev_kmh:.1f} km/h)")
+                print(f"  exit:  a_max = {exa:.3f} m/s^2, V_max = {exv:.3f} m/s ({exv_kmh:.1f} km/h)")
             else:
-                print(f"  entry: V_max = {ev:.3f} m/s, exit: V_max = {exv:.3f} m/s")
+                print(f"  entry: a_max = {ea:.3f} m/s^2, V_max = {ev:.3f} m/s")
+                print(f"  exit:  a_max = {exa:.3f} m/s^2, V_max = {exv:.3f} m/s")
 
         if show_indices:
             eidx = t.get('entry_idx', None)
