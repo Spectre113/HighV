@@ -270,7 +270,7 @@ def analyze_turns_robust(smooth_xs, smooth_ys,
 
     return filtered, s, curvature, raw_turns_info
 
-def analyze_turns(smooth_xs, smooth_ys, curvature=None, threshold=0.02, min_length=20):
+def analyze_turns(smooth_xs, smooth_ys, curvature=None, threshold=0.08, min_length=18):
     smooth_xs = np.asarray(smooth_xs)
     smooth_ys = np.asarray(smooth_ys)
 
@@ -346,7 +346,7 @@ def draw_scaled_circle(ax, center, radius, color=None, linestyle='--', alpha=0.5
     return circle
 
 def add_scaled_radius_and_intersections(turns_info, smooth_xs, smooth_ys,
-                                        C=10.0, scale_min=4.0, scale_max=7.0):
+                                        C=12.0, scale_min=8.0, scale_max=13.0):
     xs = np.asarray(smooth_xs)
     ys = np.asarray(smooth_ys)
 
@@ -414,7 +414,7 @@ def find_circle_track_intersections(center, radius, xs, ys, tol_ratio=0.05):
 
 
 def merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys, s=None,
-                                     C=10.0, scale_min=4.0, scale_max=7.0,
+                                     C=10.0, scale_min=6.0, scale_max=12.0,
                                      eps=1e-9):
 
     xs = np.asarray(smooth_xs)
@@ -725,11 +725,13 @@ def print_turns_vmax_summary(turns_info, to_kmh=True, show_indices=True):
         exv = t.get('exit_v_max', None)
         if ev is None or exv is None:
             print("  entry/exit: not available")
+
         else:
             if to_kmh:
                 ev_kmh = ev*3.6 if np.isfinite(ev) else float('inf')
                 exv_kmh = exv*3.6 if np.isfinite(exv) else float('inf')
                 print(f"  entry: V_max = {ev:.3f} m/s ({ev_kmh:.1f} km/h), exit: V_max = {exv:.3f} m/s ({exv_kmh:.1f} km/h)")
+
             else:
                 print(f"  entry: V_max = {ev:.3f} m/s, exit: V_max = {exv:.3f} m/s")
 
@@ -740,3 +742,173 @@ def print_turns_vmax_summary(turns_info, to_kmh=True, show_indices=True):
             print(f"    indices -> apex: {aidx}, entry: {eidx}, exit: {xidx}")
 
         print("")
+
+def _hermite_basis(t):
+    t = np.asarray(t)
+    t2 = t * t
+    t3 = t2 * t
+    H00 = 2*t3 - 3*t2 + 1
+    H10 = t3 - 2*t2 + t
+    H01 = -2*t3 + 3*t2
+    H11 = t3 - t2
+    return H00, H10, H01, H11
+
+def _sample_hermite_segment(p0, p1, m0, m1, t_vals):
+    H00, H10, H01, H11 = _hermite_basis(t_vals)
+    return H00 * p0 + H10 * m0 + H01 * p1 + H11 * m1
+
+def _estimate_derivative_ds_at_index(xs, ys, idx, s_arr, window=1):
+    n = len(xs)
+    if n < 3:
+        return 0.0, 0.0
+
+    if idx <= 0:
+        i0, i1 = 0, 1
+    elif idx >= n-1:
+        i0, i1 = n-2, n-1
+    else:
+        i0, i1 = idx-1, idx+1
+
+    ds = s_arr[i1] - s_arr[i0]
+    if abs(ds) < 1e-12:
+        return 0.0, 0.0
+    dx = (xs[i1] - xs[i0]) / ds
+    dy = (ys[i1] - ys[i0]) / ds
+
+    return dx, dy
+
+def _build_hermite_segment(entry_idx, exit_idx, xs, ys, s_arr, num_samples=200):
+    n = len(xs)
+    if entry_idx is None or exit_idx is None:
+        return None, None
+    
+    if not (0 <= entry_idx < n and 0 <= exit_idx < n):
+        return None, None
+    
+    if exit_idx <= entry_idx:
+        return None, None
+
+    x0, y0 = float(xs[entry_idx]), float(ys[entry_idx])
+    x1, y1 = float(xs[exit_idx]), float(ys[exit_idx])
+
+    dx_ds_0, dy_ds_0 = _estimate_derivative_ds_at_index(xs, ys, entry_idx, s_arr)
+    dx_ds_1, dy_ds_1 = _estimate_derivative_ds_at_index(xs, ys, exit_idx, s_arr)
+
+    ds_total = s_arr[exit_idx] - s_arr[entry_idx]
+    if ds_total <= 0:
+        ds_total = 1.0
+
+    dx_dt_0 = dx_ds_0 * ds_total
+    dy_dt_0 = dy_ds_0 * ds_total
+    dx_dt_1 = dx_ds_1 * ds_total
+    dy_dt_1 = dy_ds_1 * ds_total
+
+    t_samples = np.linspace(0.0, 1.0, num_samples)
+
+    seg_x = _sample_hermite_segment(x0, x1, dx_dt_0, dx_dt_1, t_samples)
+    seg_y = _sample_hermite_segment(y0, y1, dy_dt_0, dy_dt_1, t_samples)
+
+    return seg_x, seg_y
+
+def generate_new_trajectory_with_hermite(xs, ys, turns_info, samples_per_segment=200, blend_points=0):
+    xs = np.asarray(xs)
+    ys = np.asarray(ys)
+    n = len(xs)
+    if n == 0:
+        return xs.copy(), ys.copy()
+
+    s_arr = compute_arc_length(xs, ys)
+
+    turns_sorted = []
+    for info in turns_info:
+        e = info.get('entry_idx')
+        x = info.get('exit_idx')
+        a = info.get('apex_idx')
+        if e is None or x is None:
+            continue
+        if not (0 <= e < n and 0 <= x < n):
+            continue
+        if x <= e:
+            continue
+        turns_sorted.append((int(e), int(a) if a is not None else None, int(x), info))
+    turns_sorted = sorted(turns_sorted, key=lambda v: v[0])
+
+    new_x = []
+    new_y = []
+    cur = 0
+
+    for eidx, aidx, xidx, info in turns_sorted:
+        if eidx < cur:
+            continue
+
+        if cur <= eidx:
+            new_x.extend(xs[cur:eidx+1].tolist())
+            new_y.extend(ys[cur:eidx+1].tolist())
+
+        seg_x, seg_y = _build_hermite_segment(eidx, xidx, xs, ys, s_arr, num_samples=samples_per_segment)
+        if seg_x is None:
+            new_x.extend(xs[eidx+1:xidx+1].tolist())
+            new_y.extend(ys[eidx+1:xidx+1].tolist())
+            cur = xidx + 1
+            continue
+
+        if blend_points > 0:
+            orig_seg_x = xs[eidx+1:xidx+1]
+            orig_seg_y = ys[eidx+1:xidx+1]
+
+            L_orig = len(orig_seg_x)
+            L_new = len(seg_x)
+            t_orig = np.linspace(0.0, 1.0, L_orig)
+            t_new = np.linspace(0.0, 1.0, L_new)
+            seg_x_interp = np.interp(t_orig, t_new, seg_x)
+            seg_y_interp = np.interp(t_orig, t_new, seg_y)
+
+            blended = []
+            for i in range(L_orig):
+                left_dist = i
+                right_dist = L_orig - 1 - i
+                blend_len = min(blend_points, L_orig//2)
+                if blend_len <= 0:
+                    alpha = 1.0
+                else:
+                    if left_dist < blend_len:
+                        u = left_dist / max(1.0, blend_len)
+                        fade = 0.5 - 0.5 * np.cos(np.clip(u,0,1) * np.pi)
+                        alpha = fade
+                    elif right_dist < blend_len:
+                        u = right_dist / max(1.0, blend_len)
+                        fade = 0.5 - 0.5 * np.cos(np.clip(u,0,1) * np.pi)
+                        alpha = fade
+                    else:
+                        alpha = 1.0
+                x_val = (1.0 - alpha) * orig_seg_x[i] + alpha * seg_x_interp[i]
+                y_val = (1.0 - alpha) * orig_seg_y[i] + alpha * seg_y_interp[i]
+                blended.append((x_val, y_val))
+
+            for xval, yval in blended:
+                new_x.append(float(xval))
+                new_y.append(float(yval))
+
+        else:
+            new_x.extend(seg_x[1:].tolist())
+            new_y.extend(seg_y[1:].tolist())
+
+        cur = xidx + 1
+
+    if cur < n:
+        new_x.extend(xs[cur:].tolist())
+        new_y.extend(ys[cur:].tolist())
+
+    return np.array(new_x), np.array(new_y)
+
+
+def plot_new_vs_original(smooth_xs, smooth_ys, new_xs, new_ys, figsize=(10,8)):
+    plt.figure(figsize=figsize)
+    plt.plot(smooth_xs, smooth_ys, color='gray', linewidth=1, label='Original smoothed')
+    plt.plot(new_xs, new_ys, color='blue', linewidth=2, label='New (Hermite)')
+    plt.scatter([smooth_xs[0]], [smooth_ys[0]], color='green', label='Start', zorder=6)
+    plt.axis('equal')
+    plt.grid(True)
+    plt.legend()
+    plt.title('Original vs New trajectory (Hermite cubic segments)')
+    plt.show()
