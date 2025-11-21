@@ -164,6 +164,8 @@ class NonBlockingSensorController(ABC):
             self.current_state = state
             return processed_data, error, state
         except queue.Empty:
+            if self.current_state:
+                return None, self.current_state.get_error_components()['error'], self.current_state
             return None, None, self.current_state
 
     def get_current_command(self):
