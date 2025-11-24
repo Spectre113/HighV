@@ -18,7 +18,7 @@ gps = robot.getDevice("gps")
 imu = robot.getDevice("inertial unit")
 gyro = robot.getDevice("gyro")
 lidar = robot.getDevice("lidar_on")
-camera = robot.getDevice("camera")
+camera = robot.getDevice("central")
 
 # Датчики вращения колёс
 left_rear_sensor = robot.getDevice("left_rear_sensor")
@@ -195,9 +195,12 @@ while robot.step(timestep) != -1:
     # ----- ВЫЧИСЛЕНИЕ УПРАВЛЕНИЯ LQR -----
     v_cmd, omega_cmd = controller.compute_control(x_current)
 
-    left_motor_velocity, right_motor_velocity, left_steer_position, right_steer_position = compute_motor_commands(
-        v_cmd, omega_cmd
-    )
+    (
+        left_motor_velocity,
+        right_motor_velocity,
+        left_steer_position,
+        right_steer_position,
+    ) = compute_motor_commands(v_cmd, omega_cmd)
 
     # ----- ПРИМЕНЕНИЕ УПРАВЛЕНИЯ -----
     left_motor.setVelocity(left_motor_velocity)

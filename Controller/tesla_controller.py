@@ -1,7 +1,10 @@
 from controller import Robot, Camera
 import cv2
 import numpy as np
-from follow_model_line import LineFollowerController, LineFollowerController2
+from regulators.system_equations import (
+    LineFollowerController,
+    LineFollowerController2,
+)
 
 
 def read_img(camera: Camera):
@@ -17,25 +20,25 @@ robot = Robot()
 timestep = int(robot.getBasicTimeStep())
 
 # Движение
-left_motor = robot.getDevice('left_rear_wheel')
-right_motor = robot.getDevice('right_rear_wheel')
-left_steer = robot.getDevice('left_steer')
-right_steer = robot.getDevice('right_steer')
+left_motor = robot.getDevice("left_rear_wheel")
+right_motor = robot.getDevice("right_rear_wheel")
+left_steer = robot.getDevice("left_steer")
+right_steer = robot.getDevice("right_steer")
 
 # Сенсоры
-gps = robot.getDevice('gps')
-imu = robot.getDevice('inertial unit')
-gyro = robot.getDevice('gyro')
-lidar = robot.getDevice('lidar_on')
-camera_central = robot.getDevice('central')
-camera_right = robot.getDevice('right')
-camera_left = robot.getDevice('left')
+gps = robot.getDevice("gps")
+imu = robot.getDevice("inertial unit")
+gyro = robot.getDevice("gyro")
+lidar = robot.getDevice("lidar_on")
+camera_central = robot.getDevice("central")
+camera_right = robot.getDevice("right")
+camera_left = robot.getDevice("left")
 
 # Датчики вращения колёс
-left_rear_sensor = robot.getDevice('left_rear_sensor')
-right_rear_sensor = robot.getDevice('right_rear_sensor')
-left_steer_sensor = robot.getDevice('left_steer_sensor')
-right_steer_sensor = robot.getDevice('right_steer_sensor')
+left_rear_sensor = robot.getDevice("left_rear_sensor")
+right_rear_sensor = robot.getDevice("right_rear_sensor")
+left_steer_sensor = robot.getDevice("left_steer_sensor")
+right_steer_sensor = robot.getDevice("right_steer_sensor")
 
 # ВКЛЮЧЕНИЕ СЕНСОРОВ
 gps.enable(timestep)
@@ -51,8 +54,8 @@ left_steer_sensor.enable(timestep)
 right_steer_sensor.enable(timestep)
 
 # === НАСТРОЙКА МОТОРОВ ===
-left_motor.setPosition(float('inf'))
-right_motor.setPosition(float('inf'))
+left_motor.setPosition(float("inf"))
+right_motor.setPosition(float("inf"))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
@@ -72,7 +75,9 @@ while robot.step(timestep) != -1:
 
     # ----- Гироскоп -----
     gyro_values = gyro.getValues()
-    print(f"Gyro: x={gyro_values[0]:.3f}, y={gyro_values[1]:.3f}, z={gyro_values[2]:.3f}")
+    print(
+        f"Gyro: x={gyro_values[0]:.3f}, y={gyro_values[1]:.3f}, z={gyro_values[2]:.3f}"
+    )
 
     # ----- Лидар -----
     ranges = lidar.getRangeImage()

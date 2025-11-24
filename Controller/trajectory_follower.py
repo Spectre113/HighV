@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import csv
 from scipy.signal import savgol_filter
 from scipy.interpolate import CubicSpline
+from scipy.spatial import KDTree
 
 
 robot = Robot()
@@ -11,6 +12,8 @@ timestep = 32  # ms
 MAX_VELOCITY = 50.0  # m/s
 RADIUS = 0.36  # m
 MAX_SPEED = int(MAX_VELOCITY / RADIUS)  # rad / s
+
+ACCELERATION_VELOCITY = 45.0
 
 # Движение
 left_motor = robot.getDevice("left_rear_wheel")
@@ -159,7 +162,6 @@ y_turn = None
 v_turn = None
 a_turn = None
 turn_info = None
-# turn_ids = Nones
 
 with open("turn_points_with_limits.csv", "r") as f:
     turn_reader = csv.DictReader(f)
@@ -184,49 +186,74 @@ with open("turn_points_with_limits.csv", "r") as f:
         a_turn.append(a_max)
         turn_info.append(point_type)
 
-        # turn_ids.append(turn_id)
 
-        # if turn_id == len(turn_info):
-        #     turn_info.append(dict())
-        # turn_info[-1][point_type] = [a_max, v_max]
-
-
-def find_closest_point(
-    current_x: float,
-    current_y: float,
-    xs: np.ndarray,
-    ys: np.ndarray,
-    last_index: int = 0,
-    search_window: int = 2000,
-) -> int:
+def init_kd_tree(xs: np.ndarray, ys: np.ndarray) -> KDTree:
     """
-    Find the closest trajectory point to current position with directional bias.
+    Initialize KD-tree with trajectory points.
 
     Args:
-        current_x: Current x position
-        current_y: Current y position
-        xs: Trajectory x coordinates
-        ys: Trajectory y coordinates
-        last_index: Previous closest index to start search from
-        search_window: Number of points to search ahead/behind
+        xs: X coordinates of trajectory points
+        ys: Y coordinates of trajectory points
 
     Returns:
-        closest_index: Index of closest trajectory point
+        KDTree object for nearest neighbor searches
     """
-    # Search around last index to maintain direction
-    start_idx = max(0, last_index - search_window // 2)
-    end_idx = min(len(xs), last_index + search_window)
+    points = np.column_stack([xs, ys])
+    return KDTree(points)
 
-    min_distance = float("inf")
-    closest_index = last_index
 
-    for i in range(start_idx, end_idx):
-        distance = np.sqrt((current_x - xs[i]) ** 2 + (current_y - ys[i]) ** 2)
-        if distance < min_distance:
-            min_distance = distance
-            closest_index = i
+def find_closest_point(tree: KDTree, current_x: float, current_y: float) -> int:
+    """
+    Find the closest trajectory point using KD-tree.
 
-    return closest_index
+    Args:
+        tree: Pre-initialized KDTree
+        current_x: Current x position
+        current_y: Current y position
+
+    Returns:
+        Index of closest trajectory point
+    """
+    distance, index = tree.query([current_x, current_y])
+    return index
+
+
+def find_closest_velocity(s_fine: np.ndarray, path: float) -> int:
+    """
+    Find the closest point in s_fine to the given path coordinate using binary search.
+    More efficient for large arrays.
+    """
+    if len(s_fine) == 0:
+        return -1
+
+    # Handle boundaries
+    if path <= s_fine[0]:
+        return 0
+    if path >= s_fine[-1]:
+        return len(s_fine) - 1
+
+    # Use binary search to find the insertion point
+    left = 0
+    right = len(s_fine) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+        if s_fine[mid] < path:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    # Now left is the insertion point, check left and left-1 for closest
+    if left == 0:
+        return 0
+    if left == len(s_fine):
+        return len(s_fine) - 1
+
+    # Check which of the two candidates is closer
+    if abs(s_fine[left] - path) < abs(s_fine[left - 1] - path):
+        return left
+    else:
+        return left - 1
 
 
 def compute_weighted_cross_track_error(
@@ -316,6 +343,159 @@ def compute_cross_track_error(
     return cross_track_error
 
 
+def create_velocity_bezier_interpolator(
+    start_x: float,
+    start_y: float,
+    x_turn: list,
+    y_turn: list,
+    v_turn: list,
+    num_points: int = 1000,
+    max_segment_length: float = 15.0,
+    intermediate_velocity: float = 20.0,
+    tension: float = 0.3,
+):
+    """
+    Creates a Bezier interpolation function for velocities along the path.
+    Path coordinate s=0 corresponds to the vehicle's current position.
+
+    Args:
+        start_x, start_y: Current vehicle position (s=0)
+        x_turn, y_turn: Coordinates of velocity points
+        v_turn: Velocity values at each point
+        num_points: Number of points in the output interpolation
+        max_segment_length: Maximum allowed distance between consecutive points
+        intermediate_velocity: Velocity value for added intermediate points
+        tension: Controls smoothness (0.0 = linear, 0.5 = very smooth, 1.0 = sharp)
+
+    Returns:
+        Tuple: (s_fine, velocity_fine, s_orig, s_new, x_enhanced, y_enhanced, v_enhanced)
+        - s_orig: Path coordinates of ORIGINAL v_turn points
+        - s_new: Path coordinates of ADDED acceleration points
+    """
+    # Create enhanced point lists starting from vehicle position
+    x_enhanced = [start_x]
+    y_enhanced = [start_y]
+
+    # Lists to track which points are original and which are new
+    point_types = ["start"]  # 'start', 'original', 'new'
+
+    # Determine initial velocity
+    if len(x_turn) > 0:
+        distance_to_first = np.linalg.norm([x_turn[0] - start_x, y_turn[0] - start_y])
+        if distance_to_first > max_segment_length:
+            v_enhanced = [intermediate_velocity]
+        else:
+            v_enhanced = [v_turn[0]]
+    else:
+        v_enhanced = [intermediate_velocity]
+
+    # Store path coordinates for original and new points
+    s_orig = []  # Path coordinates of original v_turn points
+    s_new = []  # Path coordinates of added acceleration points
+
+    # Add turn points with intermediate points if needed
+    for i in range(len(x_turn)):
+        if i == 0:
+            prev_x, prev_y = start_x, start_y
+            prev_v = v_enhanced[0]
+        else:
+            prev_x, prev_y = x_turn[i - 1], y_turn[i - 1]
+            prev_v = v_turn[i - 1]
+
+        distance = np.linalg.norm([x_turn[i] - prev_x, y_turn[i] - prev_y])
+
+        # Only add intermediate points if segment is not too long
+        if distance > max_segment_length and distance <= 2 * max_segment_length:
+            # Add ONE intermediate point in the middle (not multiple)
+            mid_x = (prev_x + x_turn[i]) / 2
+            mid_y = (prev_y + y_turn[i]) / 2
+
+            x_enhanced.append(mid_x)
+            y_enhanced.append(mid_y)
+            v_enhanced.append(intermediate_velocity)
+            point_types.append("new")
+            print(f"Added intermediate point at ({mid_x:.1f}, {mid_y:.1f})")
+
+        # Add the original turn point
+        x_enhanced.append(x_turn[i])
+        y_enhanced.append(y_turn[i])
+        v_enhanced.append(v_turn[i])
+        point_types.append("original")
+
+    # Calculate cumulative path distances s starting from vehicle position (s=0)
+    s_enhanced = np.zeros(len(x_enhanced))
+    for i in range(1, len(x_enhanced)):
+        s_enhanced[i] = s_enhanced[i - 1] + np.linalg.norm(
+            [x_enhanced[i] - x_enhanced[i - 1], y_enhanced[i] - y_enhanced[i - 1]]
+        )
+
+    # Extract s_orig and s_new from enhanced points
+    s_orig = []
+    s_new = []
+
+    for i, point_type in enumerate(point_types):
+        if point_type == "original":
+            s_orig.append(s_enhanced[i])
+        elif point_type == "new":
+            s_new.append(s_enhanced[i])
+
+    # Generate fine s values for interpolation
+    s_fine = np.linspace(0, s_enhanced[-1], num_points + 1)
+    velocity_fine = np.zeros(num_points + 1)
+
+    # Perform Bezier interpolation between segments
+    for seg in range(len(s_enhanced) - 1):
+        # Get current and neighboring points for better control points
+        v_prev = v_enhanced[max(0, seg - 1)]
+        v_curr = v_enhanced[seg]
+        v_next = v_enhanced[seg + 1]
+        v_next2 = v_enhanced[min(len(v_enhanced) - 1, seg + 2)]
+
+        segment_length = s_enhanced[seg + 1] - s_enhanced[seg]
+
+        # Improved control point calculation with tension
+        if seg == 0:
+            # First segment - start from current position
+            P0 = (s_enhanced[seg], v_curr)
+            P1 = (s_enhanced[seg] + segment_length * tension, v_curr)
+            P2 = (s_enhanced[seg] + segment_length * (1 - tension), v_next)
+            P3 = (s_enhanced[seg + 1], v_next)
+        elif seg == len(s_enhanced) - 2:
+            # Last segment
+            P0 = (s_enhanced[seg], v_curr)
+            P1 = (s_enhanced[seg] + segment_length * tension, v_curr)
+            P2 = (s_enhanced[seg] + segment_length * (1 - tension), v_next)
+            P3 = (s_enhanced[seg + 1], v_next)
+        else:
+            # Middle segments
+            tangent_in = (v_curr - v_prev) * tension
+            tangent_out = (v_next2 - v_next) * tension
+
+            P0 = (s_enhanced[seg], v_curr)
+            P1 = (s_enhanced[seg] + segment_length * 0.3, v_curr + tangent_in * 0.3)
+            P2 = (s_enhanced[seg] + segment_length * 0.7, v_next - tangent_out * 0.3)
+            P3 = (s_enhanced[seg + 1], v_next)
+
+        # Find indices in this segment
+        seg_indices = np.where(
+            (s_fine >= s_enhanced[seg]) & (s_fine <= s_enhanced[seg + 1])
+        )[0]
+
+        for idx in seg_indices:
+            t = (s_fine[idx] - s_enhanced[seg]) / (
+                s_enhanced[seg + 1] - s_enhanced[seg]
+            )
+            # Cubic Bezier formula
+            velocity_fine[idx] = (
+                (1 - t) ** 3 * P0[1]
+                + 3 * (1 - t) ** 2 * t * P1[1]
+                + 3 * (1 - t) * t**2 * P2[1]
+                + t**3 * P3[1]
+            )
+
+    return s_fine, velocity_fine, s_orig, s_new, x_enhanced, y_enhanced, v_enhanced
+
+
 def lin2ang(linear: float, radius: float = 0.36) -> float:
     """Convert linear velocity to angular velociry of rear wheels"""
     return linear / radius
@@ -326,10 +506,8 @@ def ang2lin(angular: float, radius: float = 0.36) -> float:
     return angular / radius
 
 
-last_closest_index_position = 0
-last_closest_index_velocity = -1
-
 dt = timestep / 1000.0
+trajectory = init_kd_tree(xs, ys)
 
 xs_new = []
 ys_new = []
@@ -346,6 +524,11 @@ cross_track_error_int = 0.0
 last_vel_error = 0.0
 vel_error_int = 0.0
 
+path = 0.0
+prev_x, prev_y = None, None
+
+path_values = []
+
 # === ГЛАВНЫЙ ЦИКЛ ===
 try:
     while robot.step(timestep) != -1:
@@ -354,6 +537,28 @@ try:
         # ----- GPS -----
         pos = gps.getValues()  # [x, y, z]
         current_x, current_y = pos[0], pos[1]  # Using x and z coordinates
+
+        if prev_x is None or prev_y is None:
+            prev_x = current_x
+            prev_y = current_y
+
+            s_fine, velocity_fine, s_orig, s_new, x_enhanced, y_enhanced, v_enhanced = (
+                create_velocity_bezier_interpolator(
+                    start_x=current_x,
+                    start_y=current_y,
+                    x_turn=x_turn,
+                    y_turn=y_turn,
+                    v_turn=v_turn,
+                    num_points=1000,
+                    max_segment_length=300.0,  # Add points if distance > 300m and < 600m
+                    intermediate_velocity=ACCELERATION_VELOCITY,  # Velocity for added points
+                )
+            )
+
+        path += np.sqrt((current_x - prev_x) ** 2 + (current_y - prev_y) ** 2)
+        path_values.append(path)
+
+        prev_x, prev_y = current_x, current_y
         print(f"GPS: x={current_x:.2f}, y={current_y:.2f}")
 
         xs_new.append(current_x)
@@ -385,16 +590,10 @@ try:
 
         # Find closest trajectory point
 
-        closest_index_position = find_closest_point(
-            current_x, current_y, xs, ys, last_closest_index_position
-        )
-        last_closest_index_position = closest_index_position
+        closest_index_position = find_closest_point(trajectory, current_x, current_y)
 
         # Find closest velocity point
-        closest_index_velocity = find_closest_point(
-            current_x, current_y, x_turn, y_turn, last_closest_index_velocity
-        )
-        last_closest_index_velocity = closest_index_velocity
+        closest_index_velocity = find_closest_velocity(s_fine, path)
 
         # Cross track error
         # Compute path heading at target point
@@ -410,7 +609,7 @@ try:
             )
 
         cross_track_error = compute_weighted_cross_track_error(
-            current_x, current_y, xs, ys, last_closest_index_position, 50
+            current_x, current_y, xs, ys, closest_index_position, 10
         )
 
         cross_track_errors.append(cross_track_error)
@@ -420,9 +619,9 @@ try:
         if np.abs(cross_track_error) == 1.0:
             red_pnt = closest_index_position
 
-        # cross_track_error = 0.0 if np.abs(cross_track_error) < 0.9 else cross_track_error
+        velocity_ref = velocity_fine[closest_index_velocity]
+        last_closest_index_velocity = closest_index_velocity
 
-        velocity_ref = v_turn[closest_index_velocity]
         velocities.append(velocity_ref)
 
         current_wheel_angle = left_rear_sensor.getValue()
@@ -436,17 +635,15 @@ try:
 
         vel_errors.append(velocity_error)
 
-        # velocity_error = 0.0 if np.abs(velocity_error) < 0.5 else velocity_error
-
         # Get corresponding steering angle and velocity
 
-        kp_ct = 0.1
-        kd_ct = 0.01
+        kp_ct = 0.2
+        kd_ct = 0.1
         ki_ct = 0.01
 
         kp_v = 0.1
         kd_v = 0.01
-        ki_v = 0.8
+        ki_v = 2
 
         cross_track_error_der = (cross_track_error - last_cross_track_error) / dt
 
@@ -487,16 +684,11 @@ try:
         left_steer.setPosition(angle)
         right_steer.setPosition(angle)
 
-        # Reset if we reach the end of trajectory
-        if closest_index_position >= len(xs):
-            last_closest_index_position = 0
-        if closest_index_velocity >= len(xs):
-            last_closest_index_velocity = 0
-
 except KeyboardInterrupt:
     pass
 
 
+# Plot trajectories
 plt.figure(figsize=(8, 8))
 plt.plot(xs, ys, linestyle="--", color="red", linewidth=1, label="Reference")
 plt.plot(xs_new, ys_new, color="blue", label="Real")
@@ -510,29 +702,85 @@ plt.grid(True)
 plt.axis("equal")
 plt.legend()
 
-plt.figure(figsize=(8, 8))
-plt.plot(np.arange(0, len(cross_track_errors)), cross_track_errors, label="cross-track")
-plt.plot(np.arange(0, len(vel_errors)), vel_errors, label="velocity")
-plt.xlabel("t")
-plt.ylabel("Errors")
-plt.grid(True)
-plt.legend()
+# Error plots
+plt.figure(figsize=(10, 6))
+min_length = min(len(cross_track_errors), len(vel_errors))
+if min_length > 0:
+    time_axis = np.arange(0, min_length)
+    plt.plot(time_axis, cross_track_errors[:min_length], label="cross-track")
+    plt.plot(time_axis, vel_errors[:min_length], label="velocity")
+    plt.xlabel("Time steps")
+    plt.ylabel("Errors")
+    plt.grid(True)
+    plt.legend()
+    plt.title("Control Errors Over Time")
+else:
+    print("No error data to plot")
 
-plt.figure(figsize=(8, 8))
-plt.plot(
-    np.arange(0, len(velocities)),
-    velocities,
-    linestyle="--",
-    color="red",
-    linewidth=1,
-    label="Reference",
-)
-plt.plot(
-    np.arange(0, len(real_velocities)), real_velocities, color="Blue", label="Real"
-)
-plt.xlabel("t")
-plt.ylabel("Velocity profile")
-plt.grid(True)
+# Velocity profile plot
+plt.figure(figsize=(12, 8))
+
+# Plot reference vs real velocities with length validation
+if len(path_values) > 0 and len(velocities) > 0 and len(real_velocities) > 0:
+    min_len = min(len(path_values), len(velocities), len(real_velocities))
+    plt.plot(
+        path_values[:min_len],
+        velocities[:min_len],
+        linestyle="--",
+        color="red",
+        linewidth=1,
+        label="Reference",
+    )
+    plt.plot(
+        path_values[:min_len], real_velocities[:min_len], color="blue", label="Real"
+    )
+else:
+    print("No velocity data to plot")
+
+# Plot interpolation curve
+if len(s_fine) > 0 and len(velocity_fine) > 0:
+    plt.plot(
+        s_fine,
+        velocity_fine,
+        color="orange",
+        alpha=0.7,
+        linewidth=2,
+        label="Interpolation",
+    )
+
+# Plot target points
+if len(s_orig) > 0 and len(v_turn) > 0:
+    min_len = min(len(s_orig), len(v_turn))
+    plt.scatter(
+        s_orig[:min_len],
+        v_turn[:min_len],
+        marker="x",
+        color="magenta",
+        s=100,
+        label="Target points",
+        zorder=5,
+    )
+
+# Plot acceleration points
+if len(s_new) > 0:
+    plt.scatter(
+        s_new,
+        np.ones(len(s_new)) * ACCELERATION_VELOCITY,
+        marker="+",
+        color="red",
+        s=100,
+        linewidth=2,
+        label="Acceleration points",
+        zorder=5,
+    )
+
+plt.xlabel("Path Coordinate (m)")
+plt.ylabel("Velocity (m/s)")
+plt.grid(True, alpha=0.3)
 plt.legend()
+plt.title("Velocity Profile and Tracking Performance")
+plt.tight_layout()
+
+plt.show()
 
 plt.show()
