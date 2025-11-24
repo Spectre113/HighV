@@ -2,8 +2,8 @@ from controller import Robot
 import numpy as np
 import matplotlib.pyplot as plt
 import csv
-# from follow_model_line import LineFollowerController, LineFollowerController2
-from pid_controller import PDController
+
+from regulators.pid_controller import PDController
 from baseline_detection import MultiCameralineDetector
 from post_processing import (
     compute_turns_vmax_amax,
@@ -27,26 +27,26 @@ robot = Robot()
 timestep = 32
 
 # Движение
-left_motor = robot.getDevice('left_rear_wheel')
-right_motor = robot.getDevice('right_rear_wheel')
-left_steer = robot.getDevice('left_steer')
-right_steer = robot.getDevice('right_steer')
+left_motor = robot.getDevice("left_rear_wheel")
+right_motor = robot.getDevice("right_rear_wheel")
+left_steer = robot.getDevice("left_steer")
+right_steer = robot.getDevice("right_steer")
 
 # Сенсоры
-gps = robot.getDevice('gps')
-imu = robot.getDevice('inertial unit')
-gyro = robot.getDevice('gyro')
-lidar = robot.getDevice('lidar_on')
+gps = robot.getDevice("gps")
+imu = robot.getDevice("inertial unit")
+gyro = robot.getDevice("gyro")
+lidar = robot.getDevice("lidar_on")
 
-left_camera = robot.getDevice('left')
-central_camera = robot.getDevice('central')
-right_camera = robot.getDevice('right')
+left_camera = robot.getDevice("left")
+central_camera = robot.getDevice("central")
+right_camera = robot.getDevice("right")
 
 # Датчики вращения колёс
-left_rear_sensor = robot.getDevice('left_rear_sensor')
-right_rear_sensor = robot.getDevice('right_rear_sensor')
-left_steer_sensor = robot.getDevice('left_steer_sensor')
-right_steer_sensor = robot.getDevice('right_steer_sensor')
+left_rear_sensor = robot.getDevice("left_rear_sensor")
+right_rear_sensor = robot.getDevice("right_rear_sensor")
+left_steer_sensor = robot.getDevice("left_steer_sensor")
+right_steer_sensor = robot.getDevice("right_steer_sensor")
 
 # ВКЛЮЧЕНИЕ СЕНСОРОВ
 gps.enable(timestep)
@@ -64,8 +64,8 @@ left_steer_sensor.enable(timestep)
 right_steer_sensor.enable(timestep)
 
 # === НАСТРОЙКА МОТОРОВ ===
-left_motor.setPosition(float('inf'))
-right_motor.setPosition(float('inf'))
+left_motor.setPosition(float("inf"))
+right_motor.setPosition(float("inf"))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
@@ -75,18 +75,14 @@ right_motor.setVelocity(0.0)
 width = central_camera.getWidth()
 height = central_camera.getHeight()
 
-cameras = {
-    'left': left_camera,
-    'central': central_camera,
-    'right': right_camera
-}
+cameras = {"left": left_camera, "central": central_camera, "right": right_camera}
 
-speed = 14
+speed = 10.0
 angle = 0.0
 err = 0.0
 
 kp = 0.1
-kd = 0.01
+kd = 0.1
 controller = PDController(MultiCameralineDetector(), kp=kp, kd=kd)
 controller.start_processing()
 
@@ -95,6 +91,7 @@ yaw_rates = []
 interval = 0.2
 log = 0
 threshold = 0.25
+
 
 def moving_max(data, window_size):
     max_vals = []
@@ -106,6 +103,7 @@ def moving_max(data, window_size):
         window = data[start:end]
         max_vals.append(max(window))
     return max_vals
+
 
 # === ГЛАВНЫЙ ЦИКЛ ===
 try:
@@ -122,8 +120,9 @@ try:
 
         # ----- Гироскоп -----
         gyro_values = gyro.getValues()
-        print(f"Gyro: x={gyro_values[0]:.3f}, y={gyro_values[1]:.3f}, z={gyro_values[2]:.3f}")
-
+        print(
+            f"Gyro: x={gyro_values[0]:.3f}, y={gyro_values[1]:.3f}, z={gyro_values[2]:.3f}"
+        )
 
         if current_time - log >= interval:
             x = pos[0]
@@ -163,29 +162,12 @@ try:
             counter = 3
             if np.abs(err) > 0.7 and counter > 0:
                 counter -= 1
-                controller.kp = 0.008
-                controller.kd = 0.01
+                controller.kp = 0.3
+                controller.kd = 0.1
             else:
                 counter = 3
 
         angle = controller.get_current_command()
-
-        # 2nd order control
-        # line_angle_rad = -0.05
-        # error_rad = left_steer_sensor.getValue() - line_angle_rad
-        # acceleration = LineFollowerController2().compute_steering(velocity, error_rad)
-
-        # dt = timestep / 1000.0
-        # velocity = velocity + acceleration * dt
-        # angle = left_steer_sensor.getValue() + velocity * dt
-
-        # 1st order control
-        # velocity = LineFollowerController().compute_steering(error_rad)
-
-        # dt = timestep / 1000.0
-        # angle = left_steer_sensor.getValue() + velocity * dt
-
-        # angle = np.clip(angle, -1, 1)
 
         left_motor.setVelocity(speed)
         right_motor.setVelocity(speed)
@@ -202,19 +184,27 @@ xs_norm, ys_norm, min_x, max_x, min_y, max_y = normalize_coordinates(xs, ys)
 plot_trajectory(xs_norm, ys_norm)
 
 xs_smooth, ys_smooth = smooth_coordinates(xs, ys, window_length=15, polyorder=4)
-smooth_xs_local, smooth_ys_local = smooth_trajectory_with_window(xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100)
+smooth_xs_local, smooth_ys_local = smooth_trajectory_with_window(
+    xs_smooth, ys_smooth, window_size=3, num_interp_per_segment=100
+)
 
-smooth_xs, smooth_ys = smooth_full_trajectory_global_spline(smooth_xs_local, smooth_ys_local, num_points=4 * len(smooth_xs_local))
+smooth_xs, smooth_ys = smooth_full_trajectory_global_spline(
+    smooth_xs_local, smooth_ys_local, num_points=4 * len(smooth_xs_local)
+)
 
 curvature = calculate_curvature_global_spline(smooth_xs, smooth_ys)
 
-turns_info, s = analyze_turns(smooth_xs, smooth_ys, curvature, threshold=0.08, min_length=18)
+turns_info, s = analyze_turns(
+    smooth_xs, smooth_ys, curvature, threshold=0.08, min_length=18
+)
 
 turns_info = merge_overlapping_scaled_circles(turns_info, smooth_xs, smooth_ys)
 
 plot_turns_on_trajectory(smooth_xs, smooth_ys, turns_info)
 
-turns_info = compute_turns_vmax_amax(turns_info, mass=1900.0, mu=1.0, g=9.81, downforce=0.0)
+turns_info = compute_turns_vmax_amax(
+    turns_info, mass=1900.0, mu=1.0, g=9.81, downforce=0.0
+)
 print_turns_vmax_summary(turns_info)
 
 new_xs, new_ys = generate_new_trajectory_with_hermite(
@@ -238,16 +228,14 @@ print(f"Saved new trajectory to {trajectory_file}")
 turn_points_file = "turn_points_with_limits.csv"
 with open(turn_points_file, "w", newline="") as f:
     writer = csv.writer(f)
-    writer.writerow(
-        ["turn_id", "point_type", "index", "x", "y", "a_max", "v_max"]
-    )
+    writer.writerow(["turn_id", "point_type", "index", "x", "y", "a_max", "v_max"])
 
     n_points = len(smooth_xs)
 
     for i, t in enumerate(turns_info):
         for point_type, idx_key, a_key, v_key in [
-            ("apex", "apex_idx", "apex_a_max", "apex_v_max"),
             ("entry", "entry_idx", "entry_a_max", "entry_v_max"),
+            ("apex", "apex_idx", "apex_a_max", "apex_v_max"),
             ("exit", "exit_idx", "exit_a_max", "exit_v_max"),
         ]:
             idx = t.get(idx_key, None)
@@ -261,11 +249,8 @@ with open(turn_points_file, "w", newline="") as f:
             a_val = t.get(a_key, None)
             v_val = t.get(v_key, None)
 
-            writer.writerow(
-                [i + 1, point_type, int(idx), x, y, a_val, v_val]
-            )
+            writer.writerow([i + 1, point_type, int(idx), x, y, a_val, v_val])
 
 print(f"Saved turn points and limits to {turn_points_file}")
 
 plot_new_vs_original(smooth_xs, smooth_ys, new_xs, new_ys)
-
